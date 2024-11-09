@@ -88,6 +88,56 @@ load_seurat_object <- function(seurat.filename) {
 # }
 
 
+
+# Basic function to convert human to mouse gene names using BiomaRt
+convertHumanGeneList <- function(human_genes){
+  # set host to "dec2021.archive.ensembl.org" to use the archived version of Ensembl
+  # workaround for bug in latest host: https://support.bioconductor.org/p/9143914/, set host to prior version 105.
+  
+  require("biomaRt")
+  human = useMart("ensembl", dataset = "hsapiens_gene_ensembl",  host = "https://dec2021.archive.ensembl.org")
+  mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl",  host = "https://dec2021.archive.ensembl.org")
+  
+  lookup_list <- list()
+  for (human_gene in human_genes){
+    
+    lookup_pair <- getLDS(attributes = c("hgnc_symbol"),
+                          filters = "hgnc_symbol", values = human_gene, mart = human,
+                          attributesL = c("mgi_symbol"), martL = mouse)
+    
+    if (dim(lookup_pair)[1] == 0){
+      print(paste("No match found for", human_gene))
+      lookup_list[human_gene] <- ""
+    } else {
+      lookup_list[human_gene] <- unique(lookup_pair[1, 2])
+    }
+    
+    print(lookup_pair[,2])
+    
+    #lookup_list[[human_gene]] <- unique(genesV2[, 2])
+  }
+  
+  #mousex <- unique(genesV2[, 2])
+  # Print the first 6 genes found to the screen
+  #print(head(mousex))
+  return(lookup_list)
+}
+# get genes from linked databases
+
+lookup_list <- convertHumanGeneList(c("TP53", "BRCA1", "EGFR"))
+lookup_list <- convertHumanGeneList(human_genes)
+length(lookup_list)
+
+# 
+# human_gene_list <-  c("TP53", "BRCA1", "EGFR") 
+mus_genes <- convertHumanGeneList(human_genes)
+mus_genes
+
+# add to CellProfileMtx
+human_cell_profile$mouse_genes <- mus_genes
+
+
+
 #' With a Seurat object, rename cells to be 'cell_id' in the metadata
 #' # This rename is needed as LoadNanostring() uses <cell>_<fov> cell IDs vs the c_<slide>_<fov>_<cell> 
 #' format used elsewhere in the cosMx pipeline
@@ -1052,7 +1102,7 @@ gene_split_to_df <- function(expanded_gene_vector){
   return(expanded_gene_df)
 }
 
-get_DEGs <- function(sobj, ident="Genotype", cluster_name="post", df_gene_data) {
+get_DEGs <- function(sobj, ident="Genotype", cluster_name="post", df_gene_data, assay="RNA") {
   # expect sobj to already be subsetted here to the group of interest
   #patient_num <- 6
   #sobj_PT_tumor <- subset(sobj, subset = PanCK.PT == 1 & Patient == patient_num & Run_Tissue_name %in% c("PSR-01", "PSR-02"))
@@ -1060,8 +1110,8 @@ get_DEGs <- function(sobj, ident="Genotype", cluster_name="post", df_gene_data) 
   table(sobj$Sample.ID)
   
   Idents(sobj) <- ident
-  sobj <- PrepSCTFindMarkers(sobj, assay = "SCT", verbose = TRUE)
-  markers <- FindAllMarkers(sobj, assay="SCT", slot="data", only.pos = FALSE, verbose=TRUE, recorrect_umi = TRUE) # , min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE)
+  #sobj <- PrepSCTFindMarkers(sobj, assay = assay, verbose = TRUE)
+  markers <- FindAllMarkers(sobj, assay=assay, slot="data", only.pos = FALSE, verbose=TRUE, recorrect_umi = TRUE) # , min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE)
   
   head(x = markers)
   print(paste("number of markers from FindAllMarkers", nrow(markers)))
@@ -1094,20 +1144,37 @@ get_DEGs <- function(sobj, ident="Genotype", cluster_name="post", df_gene_data) 
 }
 
 plot_volcano_degs <- function(df_degs, num_labels = 50, title="", results_dir, 
-                              plot_height=10, plot_width=10) {
+                              plot_height=10, plot_width=10, special_labels=NULL, use_repel=TRUE) {
   
   # Expect a column names "HighFoldChangeLowPval" with values "Y" or "N"
   # top_genes <- df_degs %>%
   #   dplyr::filter(HighFoldChangeLowPval == "Y") 
-  top_genes <- df_degs %>%
-    dplyr::top_n(num_labels, wt = abs(avg_log2FC))
+
   
-  # Cap very low p-values at a threshold (e.g., 1e-300)
+  if (missing(special_labels)) {
+    special_labels <- c()
+    print ("No special labels, proceed with num_labels")
+    top_genes <- df_degs %>%
+      dplyr::top_n(num_labels, wt = abs(avg_log2FC)) %>%
+      dplyr::select(1:10)
+    print(head(top_genes))
+  } else {
+    top_genes <- df_degs %>%
+      dplyr::filter(Gene %in% special_labels & HighFoldChangeLowPval == "Y") %>%
+      dplyr::select(1:10)
+    #top_genes <- as.data.frame(special_labels)
+    df_degs$HighFoldChangeLowPval <- ifelse(df_degs$Gene %in% special_labels & 
+                                              df_degs$HighFoldChangeLowPval == "Y", "Special", 
+                                            df_degs$HighFoldChangeLowPval)
+    print(head(top_genes))
+  }
+  
+  # Cap very low p-values at a threshold (e.g.,tried 1e-300, now 1e-400) to avoid infinite values
   df_degs$p_val_adj <- pmax(df_degs$p_val_adj, 1e-300)
   
   p <- ggplot(df_degs, aes(x = avg_log2FC, y = -log10(p_val_adj), color = HighFoldChangeLowPval)) +
     geom_point(alpha = 0.6) +
-    scale_color_manual(values = c("Y" = "red", "N" = "gray")) +
+    scale_color_manual(values = c("Y" = "red", "N" = "gray", "Special" = "darkred")) +
     #theme_minimal() +
     labs(title = paste("DEGs",title),
          x = "Log2 Fold Change",
@@ -1116,19 +1183,95 @@ plot_volcano_degs <- function(df_degs, num_labels = 50, title="", results_dir,
           panel.background = element_rect(fill = "white", color = NA),  # Set panel background to white
           plot.background = element_rect(fill = "white", color = NA)) +
     
-    guides(color = "none") +   # Hide the color legend
+    guides(color = "none")    # Hide the color legend
+    #ylim(0,310)
     # Add labels for the top 10 highest fold change genes
     #coord_cartesian(ylim = c(0, 50)) +
-    ggrepel::geom_text_repel(data = top_genes, aes(label = Gene), 
+    if (use_repel == TRUE) {
+     p <- p + ggrepel::geom_text_repel(data = top_genes, aes(label = Gene), 
                              size = 3, 
                              box.padding = 0.3, 
                              max.overlaps = Inf)
+    }
+    else {
+      p <- p + geom_text(data = top_genes, aes(label = Gene),
+                         size = 3,
+                         vjust = 1,
+                         hjust = 1)
+      }
   
     print(p)
     ggplot2::ggsave(paste0(results_dir, "/VolcanoPlot_", sanitize_name(title), ".png"), 
                     plot=p, 
                     dpi = 300)
     return(p)
+}
+
+plot_waterfall_degs <- function(sobj, df_degs, num_labels = 50, title="", results_dir, 
+                              plot_height=10, plot_width=10, special_labels=NULL, use_repel=TRUE) {
+  
+  # Expect a column names "HighFoldChangeLowPval" with values "Y" or "N"
+  # top_genes <- df_degs %>%
+  #   dplyr::filter(HighFoldChangeLowPval == "Y") 
+  
+  
+  if (missing(special_labels)) {
+    special_labels <- c()
+    print ("No special labels, proceed with num_labels")
+    top_genes <- df_degs %>%
+      dplyr::top_n(num_labels, wt = abs(avg_log2FC)) %>%
+      dplyr::select(1:10)
+    print(head(top_genes))
+  } else {
+    top_genes <- df_degs %>%
+      dplyr::filter(Gene %in% special_labels & HighFoldChangeLowPval == "Y") %>%
+      dplyr::select(1:10)
+    #top_genes <- as.data.frame(special_labels)
+    df_degs$HighFoldChangeLowPval <- ifelse(df_degs$Gene %in% special_labels & 
+                                              df_degs$HighFoldChangeLowPval == "Y", "Special", 
+                                            df_degs$HighFoldChangeLowPval)
+    print(head(top_genes))
+  }
+  
+  # Cap very low p-values at a threshold (e.g.,tried 1e-300, now 1e-400) to avoid infinite values
+  df_degs$p_val_adj <- pmax(df_degs$p_val_adj, 1e-300)
+  
+  # p <- ggplot(df_degs, aes(x = avg_log2FC, y = -log10(p_val_adj), color = HighFoldChangeLowPval)) +
+  #   geom_point(alpha = 0.6) +
+  #   scale_color_manual(values = c("Y" = "red", "N" = "gray", "Special" = "darkred")) +
+  #   #theme_minimal() +
+  #   labs(title = paste("DEGs",title),
+  #        x = "Log2 Fold Change",
+  #        y = "-Log10 Adjusted P-Value") +
+  #   theme(legend.title = element_blank(),
+  #         panel.background = element_rect(fill = "white", color = NA),  # Set panel background to white
+  #         plot.background = element_rect(fill = "white", color = NA)) +
+  #   
+  #   guides(color = "none")    # Hide the color legend
+  #ylim(0,310)
+  # Add labels for the top 10 highest fold change genes
+  #coord_cartesian(ylim = c(0, 50)) +
+  # if (use_repel == TRUE) {
+  #   p <- p + ggrepel::geom_text_repel(data = top_genes, aes(label = Gene), 
+  #                                     size = 3, 
+  #                                     box.padding = 0.3, 
+  #                                     max.overlaps = Inf)
+  # }
+  # else {
+  #   p <- p + geom_text(data = top_genes, aes(label = Gene),
+  #                      size = 3,
+  #                      vjust = 1,
+  #                      hjust = 1)
+  # }
+  
+  
+  p <- WaterfallPlot(sobj, features = top_genes)
+  
+  print(p)
+  #ggplot2::ggsave(paste0(results_dir, "/WaterfallPlot_", sanitize_name(title), ".png"), 
+  #                plot=p, 
+  #                dpi = 300)
+  return(p)
 }
 
 plot_volcano_degs_test <- function(df_degs, num_labels = 50, title="", results_dir, 

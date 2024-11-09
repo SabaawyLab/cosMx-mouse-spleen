@@ -314,8 +314,9 @@ sobj1 <- subset(sobj_spleen, subset = Run_Tissue_name == "Sabaawy new core 09/13
 sobj2 <- subset(sobj_spleen, subset = Run_Tissue_name == "Sabaawy new core 09/13/2024 6")
 
 ####################################
-# pre vs post
+# compare different conditions
 ####################################
+#sobj_spleen <- sobj_spleen_even 
 save_dir <- paste0(results_dir, "/volcanos")
 file.exists(save_dir)
 if(!file.exists(save_dir)){
@@ -323,95 +324,125 @@ if(!file.exists(save_dir)){
 }
 
 # Do we have too many SCTransforms? two is okay (one from each slide)
-sobj_spleen@assays$SCT@SCTModel.list 
-sobj_spleen5 <- subset(sobj_spleen, subset = Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+#sobj_spleen@assays$SCT@SCTModel.list 
 
 # create various pairings
-sobj_WTvHomo <- subset(sobj_spleen, subset = Genotype %in% c("Spleen WT","Spleen Homozygous") & Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
-sobj_WTvHetero <- subset(sobj_spleen, subset = Genotype %in% c("Spleen WT","Spleen Heterozygous")& Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
-sobj_HeterovHomo <- subset(sobj_spleen, subset = Genotype %in% c("Spleen Heterozygous", "Spleen Homozygous")& Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_WTvHomo5 <- subset(sobj_spleen_even5, subset = Genotype %in% c("Spleen WT","Spleen Homozygous") & Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_WTvHetero5 <- subset(sobj_spleen_even5, subset = Genotype %in% c("Spleen WT","Spleen Heterozygous")& Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_HeterovHomo5 <- subset(sobj_spleen_even5, subset = Genotype %in% c("Spleen Heterozygous", "Spleen Homozygous")& Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
 
 # redo SCTTransform completely 
 # DefaultAssay(sobj_WTvHomo) <- "Nanostring"
 # sobj_WTvHomo <- SCTransform(sobj_WTvHomo, assay="Nanostring", verbose = TRUE)
 
 # to compare e.g. Sample.ID vs rest, add calculated column for Sample.ID vs rest
-sobj_spleen$Sample.30.vs.Rest <- ifelse(sobj_spleen$Sample.ID == "30", "Sample.30", "Rest")
-table(sobj_spleen$Sample.30.vs.Rest)
-sobj_spleen$Sample.31.vs.Rest <- ifelse(sobj_spleen$Sample.ID == "31", "Sample.31", "Rest")
-table(sobj_spleen$Sample.31.vs.Rest)
-sobj_spleen$Sample.32.vs.Rest <- ifelse(sobj_spleen$Sample.ID == "32", "Sample.32", "Rest")
-table(sobj_spleen$Sample.32.vs.Rest)
-sobj_spleen$Sample.34.vs.Rest <- ifelse(sobj_spleen$Sample.ID == "34", "Sample.34", "Rest")
-table(sobj_spleen$Sample.34.vs.Rest)
-sobj_spleen$Sample.35.vs.Rest <- ifelse(sobj_spleen$Sample.ID == "35", "Sample.35", "Rest")
-table(sobj_spleen$Sample.35.vs.Rest)
+sobj_spleen_even5$Sample.30.vs.Rest <- ifelse(sobj_spleen_even5$Sample.ID == "30", "Sample.30", "Rest")
+table(sobj_spleen_even5$Sample.30.vs.Rest)
+#sobj_spleen$Sample.31.vs.Rest <- ifelse(sobj_spleen_even5$Sample.ID == "31", "Sample.31", "Rest")
+#table(sobj_spleen_even5$Sample.31.vs.Rest)
+sobj_spleen_even5$Sample.32.vs.Rest <- ifelse(sobj_spleen_even5$Sample.ID == "32", "Sample.32", "Rest")
+table(sobj_spleen_even5$Sample.32.vs.Rest)
+sobj_spleen_even5$Sample.34.vs.Rest <- ifelse(sobj_spleen_even5$Sample.ID == "34", "Sample.34", "Rest")
+table(sobj_spleen_even5$Sample.34.vs.Rest)
+#sobj_spleen$Sample.35.vs.Rest <- ifelse(sobj_spleen_even5$Sample.ID == "35", "Sample.35", "Rest")
+#table(sobj_spleen_even5$Sample.35.vs.Rest)
 
 
 
-table(sobj_WTvHomo@meta.data$Genotype)
+table(sobj_WTvHomo5@meta.data$Genotype)
 
-DefaultAssay(sobj_WTvHomo) <- "SCT"
-Idents(sobj_WTvHomo) <- "Genotype"
+DefaultAssay(sobj_WTvHomo5) <- "RNA"
+Idents(sobj_WTvHomo5) <- "Genotype"
 
 #sobj_WTvHomo <- PrepSCTFindMarkers(sobj_WTvHomo, assay = "SCT", verbose = TRUE)
 
-df_wt_v_homo <- get_DEGs(sobj_WTvHomo, "Genotype", "Spleen Homozygous", df_gene_data) 
-print(paste("There are",nrow(df_wt_v_homo[df_wt_v_homo$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Genotype WT vs Homo"))
-p <- plot_volcano_degs(df_wt_v_homo, num_labels = 100, title="WT vs Homozygous", save_dir, 
-                       plot_height=10, plot_width=10)
+df_wt_v_homo <- get_DEGs(sobj_WTvHomo5, "Genotype", "Spleen Homozygous", df_gene_data, "RNA") 
+print(paste("There are",nrow(df_wt_v_homo[df_wt_v_homo$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Genotype WT vs Homo 5"))
+p <- plot_volcano_degs(df_wt_v_homo, num_labels = 50, title="WT vs Homozygous slide5_Top50nolines", save_dir, 
+                       plot_height=10, plot_width=10, use_repel = FALSE) #  , special_labels = genes_special, 
 
 
-df_wt_v_hetero <- get_DEGs(sobj_WTvHetero, "Genotype", "Spleen Heterozygous", df_gene_data) 
-print(paste("There are",nrow(df_wt_v_hetero[df_wt_v_hetero$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Genotype WT vs Hetero"))
-p <- plot_volcano_degs(df_wt_v_hetero, num_labels = 100, title="WT vs Heterozygous", save_dir, 
-                       plot_height=10, plot_width=10)
+# with genes of interest only labeled,
+# try lower_num_labels
+# If adj_p_val = 0, the volcanol plot will just peg those genes at the top. 
+#.  make wider?
 
-df_hetero_v_homo <- get_DEGs(sobj_HeterovHomo, "Genotype", "Spleen Homozygous", df_gene_data) 
-print(paste("There are",nrow(df_hetero_v_homo[df_hetero_v_homo$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Genotype Hetero vs Homo"))
-p <- plot_volcano_degs(df_hetero_v_homo, num_labels = 100, title="Heterozygous v Homozygous", save_dir, 
-                       plot_height=10, plot_width=10)
+
+df_wt_v_hetero <- get_DEGs(sobj_WTvHetero5, "Genotype", "Spleen Heterozygous", df_gene_data) 
+print(paste("There are",nrow(df_wt_v_hetero[df_wt_v_hetero$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Genotype WT vs Hetero 5"))
+p <- plot_volcano_degs(df_wt_v_hetero, num_labels = 50, title="WT vs Heterozygous slide5_Top50nolines", save_dir, 
+                       plot_height=10, plot_width=10, # special_labels = genes_special,
+                       use_repel = FALSE)
+
+df_hetero_v_homo <- get_DEGs(sobj_HeterovHomo5, "Genotype", "Spleen Homozygous", df_gene_data) 
+print(paste("There are",nrow(df_hetero_v_homo[df_hetero_v_homo$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Genotype Hetero vs Homo 5"))
+p <- plot_volcano_degs(df_hetero_v_homo, num_labels = 50, title="Heterozygous v Homozygous slide5_Top50nolines", save_dir, 
+                       plot_height=10, plot_width=10, # special_labels = genes_special,
+                       use_repel = FALSE)
 
 # samples vs rest
 
-df_30_v_rest <- get_DEGs(sobj_spleen5, "Sample.30.vs.Rest", "Rest", df_gene_data) 
+df_30_v_rest <- get_DEGs(sobj_spleen_even5, "Sample.30.vs.Rest", "Rest", df_gene_data) 
 print(paste("There are",nrow(df_30_v_rest[df_30_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 30 vs Rest"))
 # rename 'Significant' to 'HighFoldChangeLowPval'
-p <- plot_volcano_degs(df_30_v_rest, num_labels = 100, title="Sample 30 vs the Rest", save_dir, 
-                       plot_height=10, plot_width=10)
+p <- plot_volcano_degs(df_30_v_rest, num_labels = 50, title="Sample 30 vs the Rest_slide5_Top50nolines", save_dir, 
+                       plot_height=10, plot_width=10, # special_labels = genes_special,
+                       use_repel = FALSE)
 
-df_31_v_rest <- get_DEGs(sobj_spleen5, "Sample.31.vs.Rest", "Rest", df_gene_data) 
-print(paste("There are",nrow(df_31_v_rest[df_31_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 31 vs Rest"))
-# rename 'Significant' to 'HighFoldChangeLowPval'
-p <- plot_volcano_degs(df_31_v_rest, num_labels = 100, title="Sample 31 vs the Rest", save_dir, 
-                       plot_height=10, plot_width=10)
+# df_31_v_rest <- get_DEGs(sobj_spleen5, "Sample.31.vs.Rest", "Rest", df_gene_data) 
+# print(paste("There are",nrow(df_31_v_rest[df_31_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 31 vs Rest"))
+# # rename 'Significant' to 'HighFoldChangeLowPval'
+# p <- plot_volcano_degs(df_31_v_rest, num_labels = 100, title="Sample 31 vs the Rest", save_dir, 
+#                        plot_height=10, plot_width=10)
 
-df_32_v_rest <- get_DEGs(sobj_spleen5, "Sample.32.vs.Rest", "Rest", df_gene_data) 
+df_32_v_rest <- get_DEGs(sobj_spleen_even5, "Sample.32.vs.Rest", "Rest", df_gene_data) 
 print(paste("There are",nrow(df_32_v_rest[df_32_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 32 vs Rest"))
 # rename 'Significant' to 'HighFoldChangeLowPval'
-p <- plot_volcano_degs(df_32_v_rest, num_labels = 100, title="Sample 32 vs the Rest", save_dir, 
-                       plot_height=10, plot_width=10)
+p <- plot_volcano_degs(df_32_v_rest, num_labels = 50, title="Sample 32 vs the Rest slide5_Top50nolines", save_dir, 
+                       plot_height=10, plot_width=10, # special_labels = genes_special,
+                       use_repel = FALSE)
 
-df_33_v_rest <- get_DEGs(sobj_spleen5, "Sample.33.vs.Rest", "Rest", df_gene_data) 
-print(paste("There are",nrow(df_33_v_rest[df_33_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 33 vs Rest"))
-# rename 'Significant' to 'HighFoldChangeLowPval'
-p <- plot_volcano_degs(df_33_v_rest, num_labels = 100, title="Sample 33 vs the Rest", save_dir, 
-                       plot_height=10, plot_width=10)
+# df_33_v_rest <- get_DEGs(sobj_spleen5, "Sample.33.vs.Rest", "Rest", df_gene_data) 
+# print(paste("There are",nrow(df_33_v_rest[df_33_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 33 vs Rest"))
+# # rename 'Significant' to 'HighFoldChangeLowPval'
+# p <- plot_volcano_degs(df_33_v_rest, num_labels = 100, title="Sample 33 vs the Rest", save_dir, 
+#                        plot_height=10, plot_width=10)
 
-df_34_v_rest <- get_DEGs(sobj_spleen5, "Sample.34.vs.Rest", "Rest", df_gene_data) 
+df_34_v_rest <- get_DEGs(sobj_spleen_even5, "Sample.34.vs.Rest", "Rest", df_gene_data) 
 print(paste("There are",nrow(df_34_v_rest[df_34_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 34 vs Rest"))
 # rename 'Significant' to 'HighFoldChangeLowPval'
-p <- plot_volcano_degs(df_34_v_rest, num_labels = 100, title="Sample 34 vs the Rest", save_dir, 
-                       plot_height=10, plot_width=10)
+p <- plot_volcano_degs(df_34_v_rest, num_labels = 50, title="Sample 34 vs the Rest slide5_Top50nolines", save_dir, 
+                       plot_height=10, plot_width=10,  #special_labels = genes_special,
+                       use_repel = FALSE)
 
-df_35_v_rest <- get_DEGs(sobj_spleen5, "Sample.35.vs.Rest", "Rest", df_gene_data) 
-print(paste("There are",nrow(df_35_v_rest[df_35_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 35 vs Rest"))
-# rename 'Significant' to 'HighFoldChangeLowPval'
-p <- plot_volcano_degs(df_35_v_rest, num_labels = 100, title="Sample 35 vs the Rest", save_dir, 
-                       plot_height=10, plot_width=10)
-
+# df_35_v_rest <- get_DEGs(sobj_spleen5, "Sample.35.vs.Rest", "Rest", df_gene_data) 
+# print(paste("There are",nrow(df_35_v_rest[df_35_v_rest$HighFoldChangeLowPval == "Y",]), "Enr DEGs for Sample 35 vs Rest"))
+# # rename 'Significant' to 'HighFoldChangeLowPval'
+# p <- plot_volcano_degs(df_35_v_rest, num_labels = 100, title="Sample 35 vs the Rest", save_dir, 
+#                        plot_height=10, plot_width=10)
+# 
 
 # write_csv(df_path_3, paste0(results_dir, results_sub_patient, results_sub_annot, "/DEGs_PathAnnotRegions_CUTO59.csv"))
+
+# More volcanos, orig.
+p <- plot_volcano_degs(df_wt_v_homo, num_labels = 100, title="WT vs Homozygous slide5_Top100nolines", save_dir, 
+                       plot_height=10, plot_width=20, use_repel = FALSE)
+p <- plot_volcano_degs(df_wt_v_hetero, num_labels = 100, title="WT vs Heterozygous slide5_Top100nolines", save_dir, 
+                       plot_height=10, plot_width=20, # special_labels = genes_special,
+                       use_repel = FALSE)
+p <- plot_volcano_degs(df_hetero_v_homo, num_labels = 100, title="Heterozygous v Homozygous slide5_Top100nolines", save_dir, 
+                       plot_height=10, plot_width=20, # special_labels = genes_special,
+                       use_repel = FALSE)
+
+p <- plot_volcano_degs(df_30_v_rest, num_labels = 100, title="Sample 30 vs the Rest_slide5_Top100nolines", save_dir, 
+                       plot_height=10, plot_width=20, # special_labels = genes_special,
+                       use_repel = FALSE)
+p <- plot_volcano_degs(df_32_v_rest, num_labels = 100, title="Sample 32 vs the Rest slide5_Top100nolines", save_dir, 
+                       plot_height=10, plot_width=10, # special_labels = genes_special,
+                       use_repel = FALSE)
+p <- plot_volcano_degs(df_34_v_rest, num_labels = 100, title="Sample 34 vs the Rest slide5_Top100nolines", save_dir, 
+                       plot_height=10, plot_width=10,  #special_labels = genes_special,
+                       use_repel = FALSE)
 
 
 # collect dfs 
@@ -422,18 +453,17 @@ head(df_sample2)
 
 wb <- createWorkbook()
 
-# List of dataframes
-
+# List of dataframes, slide 5 only
 dfs <- list(Summary = df_sample2, 
             WT_v_Homoz = df_wt_v_homo, 
             WT_v_Hetero = df_wt_v_hetero,
             Hetero_vs_Homoz = df_hetero_v_homo,
             Sample30_v_Rest = df_30_v_rest,
-            Sample31_v_Rest = df_31_v_rest,
+            #Sample31_v_Rest = df_31_v_rest,
             Sample32_v_Rest = df_32_v_rest,
             #Sample33_v_Rest = df_33_v_rest,
-            Sample34_v_Rest = df_34_v_rest,
-            Sample35_v_Rest = df_35_v_rest )
+            Sample34_v_Rest = df_34_v_rest )
+            #Sample35_v_Rest = df_35_v_rest )
 
 
 # Write each dataframe to a separate sheet
@@ -443,7 +473,7 @@ for (name in names(dfs)) {
 }
 
 # Save the workbook
-saveWorkbook(wb, file = paste0(save_dir, "/Spleen DE Genes.xlsx"), overwrite = TRUE)
+saveWorkbook(wb, file = paste0(save_dir, "/Spleen DE Genes_Slide5_v2.xlsx"), overwrite = TRUE)
 
 
 ########################
@@ -694,6 +724,23 @@ p <- run_gsea(sobj_pt6_tumor, group.by="Sample.Label2", ident1 = "220901-brain-p
               go_id = "GO:0050776", go_name = "Regulation of Immune Response", th=4, patientid=6, results_dir=results_dir)
 p
 
+
+plot_grouped_barplot <- function(df_meta, cell.type='NS_Insitu_Celltype.level1', group.by='Run_Tissue_name', title=""){
+  df_meta$cell_type <- df_meta[[cell.type]]
+  
+  df_meta <- df_meta %>%
+    dplyr::mutate(!!group.by := gsub(" ", "_", .data[[group.by]])) %>%
+    dplyr::select(!!group.by, cell_type)
+  
+  df_celltype <- df_meta %>%
+    group_by_at(c(group.by, "cell_type")) %>%
+    summarise(count = n(), .groups = 'drop')
+  
+  p <- plot_celltypes(df_celltype, group.by, title, log2=FALSE)
+  #ggsave(paste0(results_dir, "/celltype_barplot_by_", group.by, ".png"), p, width = 10, height = 5, dpi = 300)
+  
+  return(p)
+}
 
 
 
