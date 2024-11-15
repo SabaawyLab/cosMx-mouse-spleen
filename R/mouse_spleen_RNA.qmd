@@ -1,0 +1,923 @@
+---
+title: "mouse_spleen_RNA"
+author: "Ann Strange""
+date: "5/22/2021"
+format: 
+  html:
+    fig-width: 8
+    fig-height: 4
+    code-fold: true
+---
+
+## Mouse Spleen CosMx Analysis
+
+Script name: mouse_spleen_RNA
+
+Purpose of script: load the Seurat data object produced by the AtoMx pipeline, generate plots, evaluate rna quality controls. summarize and display what has already been done in AtoMx 1
+
+Use Seurat LoadNanostring() method from flatfiles (vs exported Seurat RDS) but either is fine. 1b. subtract Negative Probes from the counts matrix 1c. Apply QC filters to the Seurat object
+
+2\. Load Sample metadata per cell: 2a. FOV and Sample.ID assignments 2b. Apply panCK/CD45 phenotypes to cells where possible. 2c. overlay the pathology annotations to get additional meta: path_annot_id and name
+
+3.  Normalization method: Total counts
+
+3\. Apply Cell Typing to the Seurat object with InSituType
+
+4\. plots and visualizations
+
+Author: Ann Strange Date Created: 2024-10-14
+
+**Email: ann.strange\@cuanschutz.edu**
+
+content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+knitr::opts_knit$set(root.dir = "/Users/annmstrange/Documents/git/cosMx-mouse-spleen")
+
+```
+
+```{r libraries}
+#| echo: false
+#| message: false
+#| warning:false
+#| include: false
+require(tidyverse)
+require(data.table)
+library(Seurat)
+library(Matrix)
+library(ggplot2)
+library(InSituType)
+library(patchwork)
+library(pheatmap)
+library(SeuratExtend)
+library(DESeq2)
+library(ggrepel)
+library(readxl)
+library(openxlsx)
+library(grid)
+library(gridExtra)
+```
+
+Setup variables, make sure to change paths for the files needed.
+
+```{r setup}
+#| echo: false
+
+#old.wd <- getwd()           # save the current working directory
+#setwd("~/Documents/git/cosMx-mouse-spleen/")   # set working directory (mac)
+source("/Users/annmstrange/Documents/git/cosMx-mouse-spleen/R/mouse_seurat_utils.R") # load up the functions we need
+
+options(scipen = 6, digits = 4) # I prefer to view outputs in non-scientific notation
+#memory.limit(30000000)     # this is needed on some PCs to increase memory allowance, but has no impact on macs.
+options(Seurat.object.assay.version = "v5")
+options(future.globals.maxSize= 10*1024*1024^2) # 10GB
+
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r paths}
+#| echo: false
+###################################
+# File structure setup, Mac syntax
+###################################
+# Modify these for each RNA experiment after export from AtoMx
+
+#root_dir <- '/Volumes/T7Shield/PSR-GEN-057' # Experiment specific folder structure
+root_dir <- '/Users/annmstrange/Documents/Projects/cosMx_MouseOct2024/Sabaawy_MuTMA_RNA_07_10_2024_21_25_12_667'
+root_ref_dir <- '/Volumes/T7Shield' # reference dir for files not specific to this Experiment. 
+exp_name <- 'Sabaawy_MuTMA_RNA_07_10_2024_21_25_12_667'
+slide_names <- c( 'Sabaawynewcore091320246', 'Sabaawynewcore091320245')
+# The cell ids in these are labeled c_1, c_2, c_3, c_4 respectively in the seurat object and metadata files.
+slide_names
+slide_name <- 'Sabaawynewcore091320245' # select one to work with (can be arbitrary)
+# run_names is not needed but could be used to navigate the directory structure
+run_names <- c('20240920_233038_S2','20240920_233038_S1')
+run_name <- '20240920_233038_S1' # matches slide_name
+
+# Caution: There is a cell naming convention in the flatfile vs the exported Seurat Object that differ. 
+# After seurat::LoadNanostring(), we will rename the keys to match the Seurat object, like c_<slide_num>_<fov>_<cell_num> e.g. c_1_1_300
+# cell_label_names is not explicitly needed, but merge will prepend these to the rownames if uniqueness is needed. 
+# Our use of rename_keys makes the use of these cell_label_names unnecessary on merge.
+# cell_label_names <- c('c_1', 'c_2', 'c_3', 'c_4')
+
+results_dir <- paste0(root_dir, "/spleen_results")
+
+rna_root_dir <- paste0(root_dir, '/RawFiles') # or flatFiles
+rna_flatfiles_dir <- paste0(root_dir, '/flatFiles')
+rna_dir <- paste0(rna_root_dir, '/', slide_name, '/', run_name, '/AnalysisResults/s2wi20fpqr') 
+# This text file lists all the Probes
+# /Users/annmstrange/Documents/Projects/cosMx_MouseOct2024/Sabaawy_MuTMA_RNA_07_10_2024_21_25_12_667/RawFiles/Sabaawynewcore091320245/20240920_233038_S1
+rna_lookup <- paste0(rna_root_dir, '/', slide_name, '/', run_name, '/plex-s2wi20fpqr.txt')
+
+metadata_dir <- paste0(root_dir,'/Metadata')
+df_sample <- read.csv(paste0(metadata_dir, '/Sample_Metadata.csv'))
+df_fov_meta <- read.csv(paste0(metadata_dir, '/FOV_Sample_Ids_RNA.csv'))
+
+# This nanostring-provided file lists Probe names, gene names, and some annotations
+markers_dir <- paste0(root_dir, '/BioMarkers')
+ns_gene_data <- 'LBL-11176-03-Mouse-Universal-Cell-Characterization-Gene-List.xlsx'
+ns_gene_fn <- paste0(markers_dir, '/', ns_gene_data)
+df_gene_data <- get_nanostring_gene_annotations(ns_gene_fn)
+
+
+```
+
+Special Genes are ones we are specifically interested in for a reason, or perhaps simply an annotation that they should be grouped together such as Cd3d and Cd3e, different isotopes for the same RNA molecule. The spreadsheet/csv can be prepared in advance for easier plotting.
+
+```{r specialgenes}
+#| echo: false
+
+df_special_genes <- read.csv(paste0(markers_dir, '/GenesOfInterest_RNA_HES.csv'))
+head(df_special_genes)
+```
+
+```{r specialgenes2}
+#| echo: false
+colnames(df_special_genes) <- c('Display_Name', 'OfInterest_Reason', "Notes", "GroupAs", "Highlight")
+df_special_genes <- df_special_genes %>% dplyr::select(Display_Name, OfInterest_Reason, Notes, GroupAs, Highlight)
+head(df_special_genes)
+
+genes_special <- df_special_genes$Display_Name
+genes_special
+
+genes_highlight <- df_special_genes %>%
+  filter(Highlight == "x") %>%
+  pull(Display_Name)
+
+genes_highlight
+# breakdown
+genes_senescence <- df_special_genes %>%
+  filter(OfInterest_Reason %in% c("Senescence")) %>%
+  pull(Display_Name)
+
+genes_special_il <- df_special_genes %>%
+  filter(OfInterest_Reason %in% c("Interleukins", "Chemokines")) %>%
+  pull(Display_Name)
+genes_special_il
+
+genes_special_gf <- df_special_genes %>%
+  filter(OfInterest_Reason %in% c("Growth Factors")) %>%
+  pull(Display_Name)
+
+genes_bcells <- df_special_genes %>%
+  filter(OfInterest_Reason %in% c("Bcell")) %>%
+  pull(Display_Name)
+genes_bcells 
+
+# genes_special_ne <- c("S100B" )
+# genes_p53 <- c("TP43", "RB1")
+# 
+# # don't bother plotting 
+# genes_low_tumor_expr <- c("KRT5", "KRT13")
+
+# left outer join with df_gene_data by RNA1K to gene 
+df_gene_data2 <- left_join(df_gene_data, df_special_genes, by ='Display_Name')
+df_gene_data2$OfInterest_Reason[is.na(df_gene_data2$OfInterest_Reason)] <- " "
+df_gene_data2$Notes[is.na(df_gene_data2$Notes)] <- " "
+df_gene_data2$GroupAs[is.na(df_gene_data2$GroupAs)] <- " "
+df_gene_data2$Highlight[is.na(df_gene_data2$Highlight)] <- " "
+head(df_gene_data2)
+nrow(df_gene_data2)
+df_gene_data <- df_gene_data2
+
+table(df_gene_data2$OfInterest_Reason)
+
+file.exists(results_dir)
+file.exists(rna_root_dir) 
+file.exists(rna_dir)
+file.exists(rna_lookup)
+file.exists(metadata_dir)
+file.exists(paste0(metadata_dir, '/Sample_Metadata.csv'))
+file.exists(paste0(metadata_dir, '/FOV_Sample_Ids_RNA.csv'))
+```
+
+Load RNA labels for RNA marker attributes
+
+expect counts similar to this:
+
+Endogenous Negative SystemControl
+
+950 10 197
+
+```{r probes}
+#| echo: false
+
+df_rna_lookup <- read.table(rna_lookup, header = TRUE, sep = "\t")
+head(df_rna_lookup) # ProbeID e.g CPROT01266, DisplayName e.g. 'CD4'
+# example lookup; RNA has no ProbeID, but DisplayName
+df_rna_lookup[df_rna_lookup$CodeClass != 'Endogenous', c('DisplayName','CodeClass')] 
+# CodeClass can be SystemControl, Negative, or Endogenous. 
+
+print(table(df_rna_lookup$CodeClass))
+```
+
+Load Seurat Data from Flatfiles
+
+This loads only the first slide (ending in "5") but both can be loaded and merged here.
+
+Normalization methods can be Total, Seurat, or Pearson. We use Seurat 'Normalize'
+
+```{r loadnanostring}
+ 
+obj_list <- list()
+negmeans_list <- list()
+for (i in 2:2){
+  print(i)
+  print(slide_names[i])
+  print(run_names[i])
+  flatfiles_dir <- paste0(rna_flatfiles_dir, '/', slide_names[i])
+  print(flatfiles_dir)
+  print(file.exists(flatfiles_dir))
+  list.files(flatfiles_dir)
+ 
+  obj_list[[i]] <- LoadNanostring(data.dir = flatfiles_dir, fov = slide_names[i], assay="RNA")
+  # LoadNanostring doesn't handle the metadata; add 
+  obj_list[[i]] <- load_mouse_meta_load_missed(obj_list[[i]], paste0(flatfiles_dir, "/",slide_names[i],"_metadata_file.csv.gz"))
+  # This rename is needed as LoadNanostring uses <cell>_<fov> cell ID vs the c_<slide>_<fov>_<cell> format used elsewhere
+  obj_list[[i]]  <- rename_keys(obj_list[[i]]) 
+  # Each slide can be normalized independently or together. Here we'll normalize each 
+  
+  # Remove SystemControls
+  print(paste0("Num Features before removing System Controls: ", nrow(obj_list[[i]])))
+
+  obj_list[[i]] = remove_sys_control(obj_list[[i]], "RNA", "counts")
+  print(paste0("Num Features after removing System Controls (expect 1010): ", nrow(obj_list[[i]])))
+  
+  # keep 0 values for Negative controls in the counts matrix after subtracting, and set aside the means for later.  InSituType needs this.
+  negmeans_list[[i]] <- get_neg_control_means(obj_list[[i]], "RNA", "counts")
+  # add metadata for "neg" also 
+  obj_list[[i]] <- AddMetaData(obj_list[[i]], metadata = data.frame(neg = negmeans_list[[i]]))
+ 
+  obj_list[[i]] <- subtract_neg_control(obj_list[[i]], "RNA", "counts")
+  print(paste0("Num Features after accounting for Negative Controls (s/b unchanged): ", nrow(obj_list[[i]])))
+  print(paste0("Num Cells before QC: ", ncol(obj_list[[i]])))
+  # BASIC QC filter needed to prevent sparsity errors in SCTransform; option for more later 
+  obj_list[[i]] <- subset(obj_list[[i]], subset = (nFeature_RNA > 10 & nCount_RNA > 20)) #20 genes/cell. also vs nFeature_Nanostring
+  print(paste0("Num Cells after super basic QC: ", ncol(obj_list[[i]])))
+  # Remove cells that didn't pass the AtoMx QC
+  obj_list[[i]] <- subset(obj_list[[i]], subset = qcCellsFlagged == FALSE)
+  print(paste0("Num Cells after filtering on more complete cell QC: ", ncol(obj_list[[i]])))
+  
+  # Normalizes counts, same as selecting "Seurat" as the norm method in AtoMx
+  # other options are "Total" or Pearson
+  obj_list[[i]] <- NormalizeData(obj_list[[i]], normalization.method = "LogNormalize", scale.factor = 10000)
+  obj_list[[i]]
+  
+}
+sobj <- obj_list[[i]]
+# If loading both slides, uncomment this line
+#sobj <- merge(obj_list[[1]], y = c(obj_list[[2]]))
+
+
+```
+
+```{r}
+print('hi')
+```
+
+Add FOV and Sample Metdata
+
+```{r loadfovs}
+
+# set rownames
+rownames(df_sample) <- df_sample$Sample.ID
+
+head(df_sample)
+# keep only subset of columns
+df_sample <- df_sample[, c('Sample.ID', 'Sample.Label', 'Sample.Nm', 'tissue', 'condition', 'Physical.Tag', 'Sex', 'Date.of.Birth', 'Genotype', 'time.to.form.tumor', 'Organ')]
+
+head(df_fov_meta)
+
+# Replace "- " with " " in the Sample.Label column
+df_sample$Sample.Label <- gsub("\n", "", df_sample$Sample.Label)
+df_sample$Sample.Label <- gsub("  ", " ", df_sample$Sample.Label)
+
+#join 
+df_fov_meta2 <- merge(df_fov_meta, df_sample, by = 'Sample.ID')
+head(df_fov_meta2)
+table(df_fov_meta2$Sample.Label)
+table(df_fov_meta2$Genotype)
+
+sobj <- add_mouse_sample_metadata(sobj, df_fov_meta2)
+table(sobj@meta.data$Organ)
+table(sobj@meta.data$Genotype)
+sobj
+
+```
+
+Subset to only single slide (in case of having loaded both)
+
+```{r subset1}
+sobj_spleen <- subset(sobj, subset = Organ == "Spleen" & Sample.ID >= "30")
+sobj_spleen5 <- subset(sobj_spleen, subset = Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+
+saveRDS(sobj_spleen5, paste0(saved_rds_dir,"/sobj_spleen5.rds"))
+
+
+```
+
+Resume here to save a lot of time. This Seurat object is fully loaded with metadata
+
+```{r resume}
+
+sobj_spleen5 <- readRDS(paste0(saved_rds_dir,"/sobj_spleen5.rds"))
+
+```
+
+Subset to Spleen only, the focus of this Analysis
+
+```{r subset}
+#| echo: false
+#| warning: false
+sobj_spleen_even <- subset(sobj, subset = Sample.ID %in% c(30,32,34)) 
+sobj_spleen_even5 <- subset(sobj_spleen_even, subset = Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+
+# rename to P21
+feat_names <- rownames(sobj_spleen_even5)
+feat_names <- gsub("Cdkn1a", "P21", feat_names)
+rownames(sobj_spleen_even5) <- feat_names
+
+table(sobj_spleen@meta.data$Sample.ID)
+# Focusing on only 3 samples, slide 5
+sobj_spleen30 <- subset(sobj_spleen5, subset = Sample.ID == 30 & 
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen31 <- subset(sobj_spleen5, subset = Sample.ID == 31 & 
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen32 <- subset(sobj_spleen5, subset = Sample.ID == 32 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen34 <- subset(sobj_spleen5, subset = Sample.ID == 34 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen35 <- subset(sobj_spleen5, subset = Sample.ID == 35 & 
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+
+
+
+```
+
+Spatial Feature Plots of key Senescence Genes
+
+```{r featureplots}
+#| echo: false
+#| warning: false
+features_genes <- c("P21", "Mki67" , "Lmna", "Chek1","Stmn1", "Pten", "Ccl5", "Cxcl13", "Gzmb" )
+Idents(sobj_spleen5) <- "Genotype"
+ImageDimPlot(sobj_spleen5, fov="Sabaawynewcore091320245")
+# FeaturePlot
+p <- ImageFeaturePlot(sobj_spleen30, fov="Sabaawynewcore091320245",
+                 features = features_genes, 
+                 size = 1,
+                 coord.fixed=TRUE,
+                 dark.background = FALSE) + 
+  plot_layout(ncol=3)
+print(p)
+# note: this returns patchworked object
+
+str(p)
+ggsave(paste0(results_dir,"/spleen30_senescence_FeaturePlots.png"), plot = p,  width = 10, height = 12, dpi = 300)
+
+p <- ImageFeaturePlot(sobj_spleen32, fov="Sabaawynewcore091320245",
+                 features = features_genes, 
+                 size = 1,
+                 dark.background = FALSE) + 
+    plot_layout(ncol=3)
+ggsave(paste0(results_dir,"/spleen32_senescence_FeaturePlots.png"), plot = p, width = 10, height = 12, dpi = 300)
+
+
+p <- ImageFeaturePlot(sobj_spleen34, fov="Sabaawynewcore091320245",
+                 features = features_genes, 
+                 size = 1,
+                 dark.background = FALSE) + 
+  plot_layout(ncol=3)
+ggsave(paste0(results_dir,"/spleen34_senescence_FeaturePlots.png"), plot = p, width = 10, height = 12, dpi = 300)
+
+
+
+```
+
+CellTypes from AtoMx
+
+This celltype is the semisupervised InSituType + 5 clusters. cluster c appears to really be Macrophages
+
+```{r celltypes}
+df_cell_types <- sobj_spleen_even@meta.data %>%
+   dplyr::select ("cell", "Sample.ID", 
+                  "RNA_nbclust_e3def5ab.413a.4c02.b683.f76ba4202d63_1_clusters",
+                  #"RNA_nbclust_853a9cfe.66b9.4d5b.895c.daee922bc6a6_1_clusters",
+                  "spatialclust_4786da16.29dc.44c6.ad08.97cef88cc2ee_1_assignments"
+            )
+  # group_by(Sample.ID, RNA_nbclust_853a9cfe.66b9.4d5b.895c.daee922bc6a6_1_clusters
+  #         ) %>%
+  # summarise(count = n(), .groups = "drop")
+head(df_cell_types)
+colnames(df_cell_types) <- c("cell", "Sample.ID", "CellType", "Niche")
+
+# Assign "a" to "Macrophges" 
+df_cell_types$CellType <- ifelse(df_cell_types$CellType == "c", "Macrophage", df_cell_types$CellType)
+
+table(df_cell_types$CellType)
+head(df_cell_types)
+```
+
+Senescence vs Proliferation: Different cells
+
+Make a dataframe of the summary counts by sample
+
+```{r markeroverlap}
+#df_meta <- sobj_spleen_even@meta.data
+sobj_spleen30
+# count matrix need
+df_30 <- get_counts_subset_df(sobj_spleen30)
+df_31 <- get_counts_subset_df(sobj_spleen31)
+df_32 <- get_counts_subset_df(sobj_spleen32)
+df_34 <- get_counts_subset_df(sobj_spleen34)
+df_35 <- get_counts_subset_df(sobj_spleen35)
+dim(df_30)
+
+# Add phenotypes
+df_30$cell <- rownames(df_30)
+df_31$cell <- rownames(df_31)
+df_32$cell <- rownames(df_32)
+df_34$cell <- rownames(df_34)
+df_35$cell <- rownames(df_35)
+
+df_30 <- df_30 %>%
+  mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
+  mutate(sen = ifelse(Cdkn1a > 0, 1, 0)) %>%
+  mutate(sen_pt = ifelse(prolif == 1 & sen ==1, "both",
+                  ifelse (prolif == 1, "prolif",
+                    ifelse(sen == 1, "sen", "neither"))))
+                    
+table(df_30$sen_pt)
+
+df_32 <- df_32 %>%
+  mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
+  mutate(sen = ifelse(Cdkn1a > 0, 1, 0)) %>%
+  mutate(sen_pt = ifelse(prolif == 1 & sen ==1, "both",
+                         ifelse (prolif == 1, "prolif",
+                                 ifelse(sen == 1, "sen", "neither"))))
+table(df_32$sen_pt)
+
+df_34 <- df_34 %>%
+  mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
+  mutate(sen = ifelse(Cdkn1a > 0, 1, 0)) %>%
+  mutate(sen_pt = ifelse(prolif == 1 & sen ==1, "both",
+                         ifelse (prolif == 1, "prolif",
+                                 ifelse(sen == 1, "sen", "neither"))))
+table(df_34$sen_pt)
+# add cell type to these, lookup for df_cell_types
+df_30 <- merge(df_30, df_cell_types, by="cell")
+dim(df_30)
+table(df_30$CellType)
+
+# celltype breakdown for each
+df_30_summary <- df_30 %>%
+  group_by(sen_pt, CellType) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  #group_by(sen_pt) %>%
+  group_by(CellType) %>%
+  mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
+
+df_30_summary$Sample.ID <- 30
+
+df_32 <- merge(df_32, df_cell_types, by="cell")
+dim(df_32)
+# celltype breakdown for each
+df_32_summary <- df_32 %>%
+  group_by(sen_pt, CellType) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  #group_by(sen_pt) %>%
+  group_by(CellType) %>%
+  mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
+# pct of the cell type in the PT (e.g. sen or prolif or both or neither)
+
+df_32_summary$Sample.ID <- 32
+
+df_34 <- merge(df_34, df_cell_types, by="cell")
+dim(df_34)
+# celltype breakdown for each
+df_34_summary <- df_34 %>%
+  group_by(sen_pt, CellType) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  #group_by(sen_pt) %>%
+  group_by(CellType) %>%
+  mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
+
+df_34_summary$Sample.ID <- 34
+
+# rbind
+df_spleen_sen_summary <- rbind(df_30_summary, df_32_summary, df_34_summary)
+df_spleen_sen_summary <- df_spleen_sen_summary %>%
+  filter(count > 20) %>%
+  filter(CellType %in% c( "B.cell", "c", "Macrophage", "Monocyte","Plasma" ,         
+                          "Plasmablast" ,  "T.cell.CD4" , "T.cell.CD8","T.cell.regulatory"))
+
+# pie plot for each sample
+df_spleen_sen_summary$sen_pt <- factor(df_spleen_sen_summary$sen_pt, levels = c("both", "prolif", "sen", "neither"))
+df_spleen_sen_summary$CellType <- factor(df_spleen_sen_summary$CellType)
+df_spleen_sen_summary <- df_spleen_sen_summary %>%
+  filter(sen_pt != "neither")
+
+levels(df_spleen_sen_summary$CellType)
+
+# Barplot grouped by sample ID and sen_pt
+ggplot(df_spleen_sen_summary, aes(x=sen_pt, y=pct_celltype_inPT, fill=CellType)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Sample.ID) +
+  theme_classic() +
+  theme( 
+        legend.position = "bottom") +
+  labs(title = "Spleen Cell Type Breakdown by Senescent/Prolif Phenotypes",
+       fill = "CellType",
+       y = "percent of CellType",
+       x = "Phenotype")
+ggsave(paste0(results_dir, "/spleen_sen_pt_celltype_barplot.png"), width = 10, height = 6, dpi=300)
+
+# Filter columns based on the condition
+num_cells_both30 <- df_30 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both30
+
+num_cells_prolif30 <- df_30 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif30
+num_cells_sensec30 <- df_30 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec30
+tot_cells30 <- nrow(df_30)
+
+num_cells_both32 <- df_32 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both32
+
+num_cells_prolif32 <- df_32 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif32
+num_cells_sensec32 <- df_32 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec32
+tot_cells32 <- nrow(df_32)
+
+num_cells_both34 <- df_34 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both34
+
+num_cells_prolif34 <- df_34 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif34
+num_cells_sensec34 <- df_34 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec34
+tot_cells34 <- nrow(df_34)
+# need total cell counts by sample
+
+# put in a dataframe 
+sample.ids <- c(30,32,34)
+both_counts <- c(num_cells_both30, num_cells_both32, num_cells_both34)
+prolif_counts <- c(num_cells_prolif30, num_cells_prolif32, num_cells_prolif34)
+sene_counts <- c(num_cells_sensec30, num_cells_sensec32, num_cells_sensec34)
+pt_df <- data.frame(sample.id = sample.ids, 
+                    both = both_counts, 
+                    prolif = prolif_counts, 
+                    sene = sene_counts)
+print(pt_df)
+```
+
+Summarize gene counts by fov to find ratios.
+
+We have overall percent cells positive for a Sample, find representative fovs
+
+```{r genesbyfov}
+
+# already have count matrices df_30 e.g. 
+
+dim(df_30)
+
+parse_third_token <- function(string) {
+  # Split the string by underscores and extract the third token
+  tokens <- strsplit(string, "_")[[1]]
+  return(tokens[3])
+}
+
+# cells positive for each gene breakdown for each fov
+# df_30$fov <- sapply(df_30$cell, parse_third_token)
+# df_30_fov <- df_30 %>%
+#   dplyr::select(c('fov','Cdkn1a','Mki67','Lmna')) %>%
+#   group_by(fov) %>%
+#   summarize(count = n(), # number of cells
+#           Cdkn1a_count = sum(Cdkn1a > 0),
+#           Mki67_count = sum(Mki67 > 0),
+#           Lmna_count = sum(Lmna > 0), 
+#           .groups = "drop") %>%
+#   dplyr::filter(count > 0)  %>%
+#   mutate(pct_cells_Cdkn1a = (Cdkn1a_count / sum(count)) * 100,
+#          pct_cells_Mki67 = (Mki67_count / sum(count)) * 100,
+#          pct_cells_Lmna = (Lmna_count / sum(count)) * 100) 
+
+df_30_fov <- get_fov_pcts(df_30, 30)
+df_30_sample <- get_sample_pcts(df_30, 30)
+
+df_32_fov <- get_fov_pcts(df_32, 32)
+df_32_sample <- get_sample_pcts(df_32, 32)
+
+df_34_fov <- get_fov_pcts(df_34, 34)
+df_34_sample <- get_sample_pcts(df_34, 34)
+
+
+# rbind
+df_genes_by_sample <- rbind(df_30_sample, df_32_sample, df_34_sample)
+df_fov_by_sample <- rbind(df_30_fov, df_32_fov, df_34_fov)
+write.csv(df_genes_by_sample, paste0(results_dir, "/key_genes_by_sample.csv"))
+write.csv(df_fov_by_sample, paste0(results_dir, "/key_genes_by_fov.csv"))
+
+#HERE. 
+
+
+df_spleen_sen_summary <- rbind(df_30_summary, df_32_summary, df_34_summary)
+df_spleen_sen_summary <- df_spleen_sen_summary %>%
+  filter(count > 20) %>%
+  filter(CellType %in% c( "B.cell", "c", "Macrophage", "Monocyte","Plasma" ,         
+                          "Plasmablast" ,  "T.cell.CD4" , "T.cell.CD8","T.cell.regulatory"))
+
+# pie plot for each sample
+df_spleen_sen_summary$sen_pt <- factor(df_spleen_sen_summary$sen_pt, levels = c("both", "prolif", "sen", "neither"))
+df_spleen_sen_summary$CellType <- factor(df_spleen_sen_summary$CellType)
+df_spleen_sen_summary <- df_spleen_sen_summary %>%
+  filter(sen_pt != "neither")
+
+levels(df_spleen_sen_summary$CellType)
+
+# Barplot grouped by sample ID and sen_pt
+ggplot(df_spleen_sen_summary, aes(x=sen_pt, y=pct_celltype_inPT, fill=CellType)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Sample.ID) +
+  theme_classic() +
+  theme( 
+        legend.position = "bottom") +
+  labs(title = "Spleen Cell Type Breakdown by Senescent/Prolif Phenotypes",
+       fill = "CellType",
+       y = "percent of CellType",
+       x = "Phenotype")
+ggsave(paste0(results_dir, "/spleen_sen_pt_celltype_barplot.png"), width = 10, height = 6, dpi=300)
+
+# Filter columns based on the condition
+num_cells_both30 <- df_30 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both30
+
+num_cells_prolif30 <- df_30 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif30
+num_cells_sensec30 <- df_30 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec30
+tot_cells30 <- nrow(df_30)
+
+num_cells_both32 <- df_32 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both32
+
+num_cells_prolif32 <- df_32 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif32
+num_cells_sensec32 <- df_32 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec32
+tot_cells32 <- nrow(df_32)
+
+num_cells_both34 <- df_34 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both34
+
+num_cells_prolif34 <- df_34 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif34
+num_cells_sensec34 <- df_34 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec34
+tot_cells34 <- nrow(df_34)
+# need total cell counts by sample
+
+# put in a dataframe 
+sample.ids <- c(30,32,34)
+both_counts <- c(num_cells_both30, num_cells_both32, num_cells_both34)
+prolif_counts <- c(num_cells_prolif30, num_cells_prolif32, num_cells_prolif34)
+sene_counts <- c(num_cells_sensec30, num_cells_sensec32, num_cells_sensec34)
+pt_df <- data.frame(sample.id = sample.ids, 
+                    both = both_counts, 
+                    prolif = prolif_counts, 
+                    sene = sene_counts)
+print(pt_df)
+```
+
+Calculate gene stats
+
+```{r genestats}
+gene <- "Mki67"
+# Step 4: Calculate mean and standard deviation per sample for each gene
+gene_stats <- lapply(genes_special, function(gene) {
+  # Extract expression for the gene
+  gene_expression <- exp_data2[gene, ]
+  norm_expression <- norm_exp_data2[gene, ]
+  # Combine expression with sample information
+  gene_df <- data.frame(expression = gene_expression,
+                        norm_expression = norm_expression,
+                        sample = df_meta$Sample.ID,
+                        label = df_meta$Sample.Label,
+                        genotype = df_meta$Genotype)
+  
+  # Calculate mean and standard deviation by sample
+  # stats <- aggregate(expression ~ sample, data = gene_df, 
+  #                    FUN = function(x) c(mean = mean(x), sd = sd(x)))
+  # norm_stats <- aggregate(norm_expression ~ sample, data = gene_df, 
+  #                    FUN = function(x) c(mean = mean(x), sd = sd(x)))
+  
+  # by sample
+  stats <- aggregate(expression ~ sample, data = gene_df, 
+                     FUN = function(x) c(pct_non_zero = pct_non_zero(x), mean_non_zero = mean_non_zero(x)))
+  
+  norm_stats <- aggregate(norm_expression ~ sample, data = gene_df, 
+                      FUN = function(x) c(pct_non_zero = pct_non_zero(x), mean_non_zero = mean_non_zero(x)))
+  
+  stats
+  norm_stats
+  # non_zero_counts <- gene_expression[gene_expression >0]
+  # print(length(non_zero_counts))
+  # non_zero_counts_norm <- norm_expression[norm_expression >0]
+  # print(length(non_zero_counts_norm))  # expected to be the same
+  # pct_non_zero <- length(gene_expression[gene_expression >0]) / length(gene_expression) * 100
+  # mean_pos_expr <- mean(non_zero_counts)
+  # mean_pos_expr_norm <- mean(non_zero_counts_norm)
+  
+  # Add the number of cells for each sample to the result
+  stats$cell_count <- cell_counts_by_sample[stats$sample]
+  
+  # join stats and norm_stats
+  stats <- merge(stats, norm_stats, by="sample")
+  #stats <- merge(pct_non_zero, mean_pos_expr, mean_pos_expr_norm, by="sample")
+  # Format the result
+  # stats <- data.frame(sample = stats$sample,
+  #                     mean = sapply(stats$expression, "[", 1),
+  #                     sd = sapply(stats$expression, "[", 2))
+  stats$gene <- gene
+  stats
+})
+df_gene_stats <- do.call(rbind, gene_stats)
+class(df_gene_stats)
+df_gene_stats
+colnames(df_gene_stats) #<- c("sample", "expression.mean", "expression.sd", "gene"))
+df_gene_stats <- df_gene_stats[, c("gene", "sample","cell_count", "expression", "norm_expression")]
+head(df_gene_stats)
+```
+
+Gene Stats Summary, for genes that need aggregating such as Cd3e, Cd3d, Cd3g to CD3.
+
+```{r gene_stat_summary}
+# get unique GroupAs from df_gene_data2
+grouped_genes <- unique(df_gene_data2$GroupAs) # CD3, CD8, VEGF
+grouped_genes <- grouped_genes[!grouped_genes %in% c("", " ")]
+grouped_genes
+group <- "CD3"
+
+# get stats by GroupAs
+gene_stats_grouped <- lapply(grouped_genes, function(group) {
+  # Extract expression for the gene
+  gene_expression <- colSums(exp_data2[df_gene_data2[df_gene_data2$GroupAs == group, "Display_Name"], ])
+  norm_expression <- colSums(norm_exp_data2[df_gene_data2[df_gene_data2$GroupAs == group, "Display_Name"], ])
+  # Combine expression with sample information
+  # not used
+  gene_df <- data.frame(expression = gene_expression,
+                        norm_expression = norm_expression,
+                        sample = df_meta$Sample.ID,
+                        label = df_meta$Sample.Label,
+                        genotype = df_meta$Genotype
+                        )
+  
+  # by sample
+  stats <- aggregate(expression ~ sample, data = gene_df, 
+                     FUN = function(x) c(pct_non_zero = pct_non_zero(x), mean_non_zero = mean_non_zero(x)))
+  
+  norm_stats <- aggregate(norm_expression ~ sample, data = gene_df, 
+                          FUN = function(x) c(pct_non_zero = pct_non_zero(x), mean_non_zero = mean_non_zero(x)))
+  
+  # join stats and norm_stats
+  stats <- merge(stats, norm_stats, by="sample")
+  
+  # Add the number of cells for each sample to the result
+  stats$cell_count <- cell_counts_by_sample[stats$sample]
+  stats$gene <- group
+  stats
+})
+
+gene_stats_grouped <- do.call(rbind, gene_stats_grouped)
+class(gene_stats_grouped)
+gene_stats_grouped
+colnames(gene_stats_grouped) #<- c("sample", "expression.mean", "expression.sd", "gene"))
+gene_stats_grouped <- gene_stats_grouped[, c("gene", "sample","cell_count", "expression", "norm_expression")]
+head(gene_stats_grouped)
+
+# Now combine the two 
+colnames(gene_stats_grouped) #<- c("sample", "expression.mean", "expression.sd", "gene"))
+gene_stats_grouped <- gene_stats_grouped[, c("gene", "sample","cell_count", "expression", "norm_expression")]
+colnames(df_gene_stats)
+df_list <- list(df_gene_stats, gene_stats_grouped)
+df_gene_stats2 <- do.call(rbind, df_list)
+ 
+
+# add gene names from df_gene_data2
+df_gene_data_temp <- df_gene_data2[,c("Display_Name", "OfInterest_Reason", "Notes", "GroupAs", "Highlight")]
+df_gene_stats3 <- merge(df_gene_stats2, df_gene_data_temp, by.x="gene", by.y="Display_Name")
+head(df_gene_stats3)
+
+# also get sample.label from df_sample
+df_gene_stats3 <- merge(df_gene_stats3, df_sample[,c("Sample.ID", "Sample.Nm", "Genotype")], by.x="sample", by.y="Sample.ID")
+head(df_gene_stats3)
+
+
+write.csv(df_gene_stats3, paste0(results_dir, "/df_gene_stats_spleen_even.csv"), row.names = FALSE)
+
+
+```
+
+Barplots to show relative expression levels by sample, to see which increase/decrease e.g.
+
+```{r barplots}
+print("Barplots placeholder")
+```
+
+Crop FOVs for Spatial rendering of multiple molecules per TMA sample
+
+```{r crop}
+ImageDimPlot(sobj_spleen5, fov="Sabaawynewcore091320245", axes=TRUE, flip_xy =FALSE )
+
+#######################
+# Define fovs, needed for spatial plots of molecules. 
+# fov30 
+# fov31, etc. 
+df_meta <- sobj_spleen5@meta.data
+bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 30)
+bbox_mtx
+# BUG: The y and x coords are flipped in the Crop function
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov30"]] <- cropped.coords
+# do we have the right subregion?
+ImageDimPlot(sobj_spleen5, fov="fov30", axes=TRUE, flip_xy=FALSE)
+
+# fov31
+bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 31)
+bbox_mtx
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov31"]] <- cropped.coords
+# fov32
+bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 32)
+bbox_mtx
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov32"]] <- cropped.coords
+# fov34
+bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 34)
+bbox_mtx
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov34"]] <- cropped.coords
+# fov35
+bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 35)
+bbox_mtx
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov35"]] <- cropped.coords
+
+DefaultBoundary(sobj_spleen5[["fov30"]]) <- "centroids"
+DefaultBoundary(sobj_spleen5[["fov31"]]) <- "centroids" # "segmentation" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov32"]]) <- "centroids" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov34"]]) <- "centroids" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov35"]]) <- "centroids"
+
+
+```
