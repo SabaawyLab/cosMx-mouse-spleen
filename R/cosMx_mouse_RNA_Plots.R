@@ -736,6 +736,7 @@ plot_grouped_barplot <- function(df_meta, cell.type='NS_Insitu_Celltype.level1',
     group_by_at(c(group.by, "cell_type")) %>%
     summarise(count = n(), .groups = 'drop')
   
+  
   p <- plot_celltypes(df_celltype, group.by, title, log2=FALSE)
   #ggsave(paste0(results_dir, "/celltype_barplot_by_", group.by, ".png"), p, width = 10, height = 5, dpi = 300)
   

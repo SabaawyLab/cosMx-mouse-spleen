@@ -102,11 +102,12 @@ library(SeuratExtend)
 library(DESeq2)
 library(ggrepel)
 library(openxlsx)
-library(biomaRt)
+library(gridExtra)
+#library(biomaRt)
 
 old.wd <- getwd()           # save the current working directory
 setwd("~/Documents/git/cosMx-mouse-spleen/")   # set working directory (mac)
-source("R/seurat_utils.R") # load up the functions we need
+source("R/mouse_seurat_utils.R") # load up the functions we need
 #source("R/image_reg_tools.R")
 #source("R/gene_annotations.R") # needs a little fixing
 #source("R/cell_typing_utils.R")
@@ -180,8 +181,8 @@ df_fov_meta <- read.csv(paste0(metadata_dir, '/FOV_Sample_Ids_RNA.csv'))
 markers_dir <- paste0(root_dir, '/BioMarkers')
 ns_gene_data <- 'LBL-11176-03-Mouse-Universal-Cell-Characterization-Gene-List.xlsx'
 ns_gene_fn <- paste0(markers_dir, '/', ns_gene_data)
-df_gene_data <- get_nanostring_gene_annotations(ns_gene_fn)
-
+df_gene_data <- get_nanostring_mouse_gene_annotations(ns_gene_fn )
+head(df_gene_data, 3)
 
 # Convert Human to Mouse
 # load cosMx Cell Profile for Human IO
@@ -189,8 +190,24 @@ human_cell_profile <- read.csv( "/Users/annmstrange/Documents/git/CosMx-Cell-Pro
                                  row.names = 1)
 
 head(human_cell_profile)
+
+# inner join on Human_Gene
+human_cell_profile$gene <- rownames(human_cell_profile)
+new_matrix <- merge(human_cell_profile, df_gene_data, by.x ="gene", by.y= "Human_Gene")
+head(new_matrix)
+dim(human_cell_profile)
+dim(new_matrix)
+# Lost 100, which ones?
+setdiff(human_cell_profile$gene, new_matrix$gene)
+setdiff(df_gene_data$Display_Name, new_matrix$Display_Name)
+
 human_genes <- rownames(human_cell_profile)
 human_genes
+new_matrix <- new_matrix[,1:17]
+rownames(new_matrix) <- new_matrix$Display_Name
+new_matrix <- new_matrix[, -1]
+new_matrix <- new_matrix[, -16]
+head(new_matrix)
 
 df2 <- as.data.frame(lookup_list)
 
@@ -198,6 +215,12 @@ df2 <- as.data.frame(lookup_list)
 lookup_list <- convertHumanGeneList(c("TP53", "BRCA1", "EGFR"))
 lookup_list <- convertHumanGeneList(human_genes)
 length(lookup_list)
+
+# given a list of Murine gene equivalents, there will be some gaps and dupes.
+# now match each human gene to the mouse equivalent (NS Display Name) found for our Mouse experiment. 
+head(ns_gene_data)
+lookup_list2 <- findMatchingDisplayGene(c("Trp53", "Brca1"), ns_gene_data)
+
 
 df_human_to_mouse <- data.frame(human = names(lookup_list), mouse = as.character(lookup_list))
 #df_human_to_mouse <- as.data.frame(lookup_list)
@@ -529,7 +552,7 @@ colnames(sobj@meta.data)
 # Save the Seurat object 
 saveRDS(sobj, file = paste0(saved_rds_dir, "/sobj_from_Load_v1.RDS"))
 # to resume here after LoadNanostring
-#sobj <- readRDS(paste0(results_dir, "/sobj_from_Load_v1.RDS"))
+#sobj <- readRDS(paste0(saved_rds_dir, "/sobj_from_Load_v1.RDS"))
 
 
 #################################################
@@ -596,119 +619,13 @@ table(df_fov_meta2$Genotype)
 # assign metadata to each cell by fov and flow cell (slide) i.e Run_Tissue_name
 #df_metadata <- sobj@meta.data
 
-calculate_mouse_PanCK_PT <- function(value) {
-  # if (is.na(value) || value > 4000) {
-  #   return('na')
-  if (value > 1200) {
-    return(1)
-  } else {
-    return(0)
-  }
-}
 
-calculate_mouse_CD45_PT <- function(value) {
-  if (is.na(value)) {
-    return(0)
-  } else
-    if (value > 3000) {
-      return(1)
-    } else {
-      return(0)
-    }
-}
-
-#' Add FOV and Sample metadata to the Seurat object
-#'
-#' @param obj The Seurat object
-#' @df_fov_meta dataframe with FOV and Sample metadata with columns 'fov' and 'Run_Tissue_name' to match the object's metadata as keys
-#' @return Seurat Object
-#' @examples
-#' obj <- add_sample_metadata(obj, df_fov_meta)
-add_mouse_sample_metadata <- function(obj, df_fov_meta){
-  
-  df_metadata <- obj@meta.data
-  # Apply the function to create the PanCK.PT column
-  
-  
-  df_metadata2 <- merge(df_metadata, df_fov_meta, 
-                        by.x = c('fov', 'Run_Tissue_name'), by.y = c('fov', 'Run_Tissue_name'),
-                        suffixes = c(".x",""), how = 'inner')
-  print(head(df_metadata2))
-  
-  # df_metadata2$Mean.PanCK[is.na(df_metadata2$Mean.PanCK)] <- 0
-  # df_metadata2$Max.PanCK[is.na(df_metadata2$Max.PanCK)] <- 0
-  # df_metadata <- df_metadata %>%
-  #  mutate(PanCK.PT = sapply(Mean.PanCK, calculate_PanCK_PT))
-  
-  # sample thresholds
-  panCK.thresholds <- c("30" = 1200, "31" = 1200, "32" = 1200, "33" = 1200, "34" = 1200, "34" = 1200,
-                        "35" = 1200, "0" = 1200)
-  df_metadata2 <- df_metadata2 %>%
-    dplyr::mutate(
-      PanCK.threshold = panCK.thresholds[Sample.ID],  # Look up threshold by Sample.ID
-      PanCK.PT = as.integer(Mean.PanCK >= PanCK.threshold)  # Threshold comparison
-    )
-  print(table(df_metadata2$PanCK.PT))
-  df_metadata2$Mean.CD45[is.na(df_metadata2$Mean.CD45)] <- 0
-  df_metadata2$Max.CD45[is.na(df_metadata2$Max.CD45)] <- 0
-  CD45.thresholds <-  c("30" = 3000, "31" = 3000, "32" = 3000, "33" = 3000, "34" = 3000, "34" = 3000,
-  "35" = 3000, "0" = 3000)
-  
-  df_metadata <- df_metadata %>%
-   mutate(CD45.PT = sapply(Mean.CD45, calculate_CD45_PT))
-  df_metadata2 <- df_metadata2 %>%
-    mutate(CD45.threshold = CD45.thresholds[Sample.ID],          # Look up threshold by sample
-           CD45.PT = as.integer(Mean.CD45 >= CD45.threshold))
-  
-  print(table(df_metadata2$CD45.PT))
-
-  cols_to_add <- c("cell_id", "CD45.PT", "PanCK.PT", "Mean.PanCK", "Mean.CD45",
-                  "PanCK.threshold", "CD45.threshold", colnames(df_fov_meta))
-  
-  cols_to_add <- c("cell_id", colnames(df_fov_meta))
-  
-  print(paste("cells before merge", nrow(df_metadata2)))
-  
-  #df_metadata2$PanCK.PT[is.na(df_metadata2$PanCK.PT)] <- 1
-  #df_metadata2$CD45.PT[is.na(df_metadata2$CD45.PT)] <- 0
-  
-  print(paste("cells after merge", nrow(df_metadata2)))
-  
-  rownames(df_metadata2) <- df_metadata2$cell_id 
-  # keep only some columns
-  df_metadata2 <- df_metadata2[, cols_to_add]
-  
-  # Do we have all the slides?
-  table(df_metadata2$Run_Tissue_name)
-  nrow(df_metadata2) # same as full orig. ?
-  
-  # Identify rows with NA in cell_ID
-  na_rows <- is.na(df_metadata2$cell_ID)
-  # Display rows with NA in cell_ID
-  nrow(df_metadata2[na_rows, ])
-  
-  # do_rownames_match(sobj, df_metadata2) # FALSE 
-  # display cell_Ids in sobj not found in df_metadata2
-  cell_IDs_not_in_metadata <- setdiff(colnames(obj), rownames(df_metadata2))
-  print(length(cell_IDs_not_in_metadata)) # expect 0 
-  #cell_IDs_not_in_metadata[1:10]
-  cell_IDs_not_in_sobj <- setdiff(rownames(df_metadata2), colnames(obj)) # 0
-  # sort 
-  df_metadata2 <- df_metadata2[colnames(obj), ]
-  do_rownames_match(obj, df_metadata2) # try again?
-  
-  # preview metadata for cell_ID "c_4_18_1"
-  #df_metadata[df_metadata$cell_ID == "c_4_18_1",]
-  
-  obj <- AddMetaData(obj, df_metadata2)
-  
-  return(obj)
-}
 
 
 sobj <- add_mouse_sample_metadata(sobj, df_fov_meta2)
 table(sobj@meta.data$Organ)
 table(sobj@meta.data$Genotype)
+sobj
 
 # Exclude FOVs marked for exclusion in the fov metadata
 #table(sobj@meta.data$Exclude) # 2823 cells to remove
@@ -762,11 +679,15 @@ rownames(sobj_spleen_even5) <- feat_names
 
 table(sobj_spleen@meta.data$Sample.ID)
 # Focusing on only 3 samples, slide 5
-sobj_spleen30 <- subset(sobj_spleen_even5, subset = Sample.ID == 30 & 
+sobj_spleen30 <- subset(sobj_spleen5, subset = Sample.ID == 30 & 
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
-sobj_spleen32 <- subset(sobj_spleen_even5, subset = Sample.ID == 32 &
+sobj_spleen31 <- subset(sobj_spleen5, subset = Sample.ID == 31 & 
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
-sobj_spleen34 <- subset(sobj_spleen_even5, subset = Sample.ID == 34 &
+sobj_spleen32 <- subset(sobj_spleen5, subset = Sample.ID == 32 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen34 <- subset(sobj_spleen5, subset = Sample.ID == 34 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen35 <- subset(sobj_spleen5, subset = Sample.ID == 35 & 
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
 
 genes_senescence
@@ -776,8 +697,8 @@ rownames(sobj_spleen30)[140:200]
 
 
 features_genes <- c("P21", "Mki67" , "Lmna", "Chek1","Stmn1", "Pten", "Ccl5", "Cxcl13", "Gzmb" )
-Idents(sobj_spleen_even) <- "Genotype"
-ImageDimPlot(sobj_spleen_even, fov="Sabaawynewcore091320245")
+Idents(sobj_spleen5) <- "Genotype"
+ImageDimPlot(sobj_spleen5, fov="Sabaawynewcore091320245")
 # FeaturePlot
 p <- ImageFeaturePlot(sobj_spleen30, fov="Sabaawynewcore091320245",
                  features = features_genes, 
@@ -836,9 +757,9 @@ print( theme_get())
 saveRDS(sobj_spleen_even, paste0(saved_rds_dir,"/sobj_spleen_even.rds"))
 # get counts of each molecule by sample.
 
-get_counts_subset_df <- function(sboj){
+get_counts_subset_df <- function(sobj){
   
-  exp_data <- as.matrix(GetAssayData(sboj, assay="RNA", layer="counts"))
+  exp_data <- as.matrix(GetAssayData(sobj, assay="RNA", layer="counts"))
   class(exp_data)
   dim(exp_data) # 1000 x 191K
   # how to subset matrix by gene
@@ -856,6 +777,7 @@ dim(exp_data) # 1000 x 191K
 # which genes in genes_special not found as rownames in exp_data
 genes_special_not_found <- setdiff(genes_special, rownames(exp_data))
 print(genes_special_not_found)
+genes_special <- genes_special[!genes_special %in% genes_special_not_found]
 
 exp_data2 <- exp_data[genes_special, ]
 norm_exp_data2 <- norm_exp_data[genes_special,]
@@ -935,17 +857,24 @@ head(df_cell_types)
 sobj_spleen30
 # count matrix need
 df_30 <- get_counts_subset_df(sobj_spleen30)
+df_31 <- get_counts_subset_df(sobj_spleen31)
 df_32 <- get_counts_subset_df(sobj_spleen32)
 df_34 <- get_counts_subset_df(sobj_spleen34)
-dim(df_30)
+df_35 <- get_counts_subset_df(sobj_spleen35)
 
+dim(df_30)
+dim(df_31)
+dim(df_32)
 
 # Add phenotypes
 df_30$cell <- rownames(df_30)
+df_31$cell <- rownames(df_31)
 df_32$cell <- rownames(df_32)
 df_34$cell <- rownames(df_34)
 #df_30$prolif <- ifelse(df_30$Pcna > 0 | df_30$Mki67 > 0, 1, 0)
 #df_30$sen <- ifelse(df_30$Cdkn1b > 0 , 1, 0)
+
+
 
 df_30 <- df_30 %>%
   mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
@@ -1306,131 +1235,63 @@ for (reason in unique(df_gene_stats3$OfInterest_Reason)) {
 
 
 ###################################
-# plot grid of ImageDim Plots
+# plot grid of ImageDim Plots with select FOVs and gene combinations
 ###################################
-library(gridExtra)
 
-##########################
-# first, make some sub-fovs
-
-# fov_nm e.g. "Sabaawynewcore091320245"
-get_coords_fov <- function(sobj, sample_ids, fov_nm) {
-  df_meta <- sobj@meta.data
-  df_meta2 <- df_meta %>%
-    filter(Sample.ID %in% sample_ids)
-  
-  padding <- 0
-  x_min <- round(min(df_meta2$CenterX_global_px)) - padding
-  y_min <- round(min(df_meta2$CenterY_global_px)) - padding
-  x_max <- round(max(df_meta2$CenterX_global_px)) + padding
-  y_max <- round(max(df_meta2$CenterY_global_px)) + padding
-  print(paste(y_min, y_max, x_min, x_max))
-  
-  sobj_fov <- subset(sobj, subset = Sample.ID %in% sample_ids )
-  
-  cropped.coords.fov <- Crop(sobj[[fov_nm]], 
-                             x = c(x_min, x_max), y = c(y_min,y_max), coords = "tissue")
-  
-  # Returns an fov object which should be added to the original object. 
-  return(cropped.coords.fov)
-}
-
-newfov <- get_coords_fov(sobj_spleen, c(30,31,32,34,35), "Sabaawynewcore091320245")
-sobj_spleen@images$spleenfov <- newfov
-
-# fov <- get_coords_fov(sobj_spleen1, 31, "Sabaawynewcore091320245")
-# sobj_spleen1$fov_31 <- fov
-# 
-# fov <- get_coords_fov(sobj_spleen1, 32, "Sabaawynewcore091320245")
-# sobj_spleen1$fov_32 <- fov
-# 
-# fov <- get_coords_fov(sobj_spleen1, 34, "Sabaawynewcore091320245")
-# sobj_spleen1$fov_34 <- fov
-# 
-# 
 # sobj_spleen1@images
 
-# 
 # #sobj_spleen1@images$fov31 <- cropped.coords.fov
 # Idents(sobj_spleen1) <- "Sample.ID"
-# # still not working; with subset fov, the molecules not plotted.
+# # The following is still not working; with subset fov, the molecules not plotted, or the entire slide is 
+# plotted
 # ImageDimPlot(sobj_spleen1, fov="fov_32", molecules = c("Mtor", "Cd3e")) 
 
+ImageDimPlot(sobj_spleen5, fov="Sabaawynewcore091320245", axes=TRUE, flip_xy =FALSE )
 
 #######################
-# Define fovs
+# Define fovs, needed for spatial plots of molecules. 
+# fov30 
+# fov31, etc. 
+df_meta <- sobj_spleen5@meta.data
+bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 30)
+bbox_mtx
+# BUG: The y and x coords are flipped in the Crop function
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov30"]] <- cropped.coords
+# do we have the right subregion?
+ImageDimPlot(sobj_spleen5, fov="fov30", axes=TRUE, flip_xy=FALSE)
+
 # fov31
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 31)
 bbox_mtx
-cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], 
-                       x = c(bbox_mtx[2,1], bbox_mtx[2,2]), y = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj[["fov31"]] <- cropped.coords
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov31"]] <- cropped.coords
 # fov32
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 32)
 bbox_mtx
-cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], 
-                       x = c(bbox_mtx[2,1], bbox_mtx[2,2]), y = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj[["fov32"]] <- cropped.coords
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov32"]] <- cropped.coords
 # fov34
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 34)
 bbox_mtx
-cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], 
-                       x = c(bbox_mtx[2,1], bbox_mtx[2,2]), y = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj[["fov34"]] <- cropped.coords
-
-DefaultBoundary(sobj[["fov31"]]) <- "centroids" # "segmentation" # sets cell segmentation outline
-DefaultBoundary(sobj[["fov32"]]) <- "centroids" # sets cell segmentation outline
-DefaultBoundary(sobj[["fov34"]]) <- "centroids" # sets cell segmentation outline
-
-
-sobj6 <- subset (sobj, subset = Sample.ID %in% c(6))
-df_meta6 <- sobj6@meta.data
-bbox_mtx <- get_bbox_of_sample(df_meta6, "Sabaawy new core 09/13/2024 5", 6)
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov34"]] <- cropped.coords
+# fov35
+bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 35)
 bbox_mtx
-cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], 
-                       x = c(bbox_mtx[2,1], bbox_mtx[2,2]), y = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj[["fov6"]] <- cropped.coords
-DefaultBoundary(sobj[["fov6"]]) <- "centroids"
-genes_regions6 <- c("Cd3e", "Cd3d", "Cd3g", "Cd8a", "Cd8b1", "Foxp3")
-colors_regions6 <-  c("red", "red", "red", "green", "green", "blue")
-names(colors_regions6) <- genes_regions6
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+sobj_spleen5[["fov35"]] <- cropped.coords
 
-p <- plot_molecules (sobj, "fov6", mol_list = genes_regions6, 
-                colors_regions6, "Regions Sample 6", show_legend=TRUE, molsize=1)
-p
-ggsave(paste0(results_dir,"regions_sample6.png"), p, width=10, height=10)
-
-# cell counts by fov
-count_mtx6 <- FetchData(sobj, fov = "fov6", vars=genes_regions6, layer = "counts")
-head(count_mtx6)
-
-file_suffix <- "Brain6"
-gene_data1 <- fetch_mouse_gene_data(sobj6, gene_names6)
-head(gene_data1)
-p <- plot_mouse_multiple_gene_boxplots(gene_data1, gene_names)+
-  ggtitle("Sample 6")
-p
-
-DefaultAssay(sobj6) <- "Nanostring"
-counts_data <- FetchData(sobj6, genes_regions6, layer = "counts") # s/b data
-df_meta6 <- sobj6@meta.data[c('Sample.ID','Sample.Label', 'Patient', 'fov')]
-head(df_meta6)
-gene_data <- merge(counts_data, df_meta6, how="inner", by="row.names")
-plot_mouse_multiple_gene_boxplots(gene_data, genes_regions6)+
-  ggtitle("Sample 6")
-
-head(gene_data)
-
-# I want to plot the number of rows with Cd3e > 0, Cd3d > 0, Cd3g > 0, or Cd8a > 0 
-# for each fov
-# "Cd8a", "Cd8b1"
-
-summary_df <- gene_data %>%
-  filter(Foxp3 > 0 ) %>%  # Filter rows where any of the conditions are true
-  group_by(fov) %>%  # Group by fov
-  summarise(FoxP3_pos_cells = n())  
-
-summary_df
+DefaultBoundary(sobj_spleen5[["fov30"]]) <- "centroids"
+DefaultBoundary(sobj_spleen5[["fov31"]]) <- "centroids" # "segmentation" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov32"]]) <- "centroids" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov34"]]) <- "centroids" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov35"]]) <- "centroids"
 
 
 
@@ -1447,7 +1308,7 @@ names(colors_regions) <- genes_regions
 genes_bcells 
 colors_bcells_combined <- rep("blue", length(genes_bcells))
 # Bcl2 is organge to highlight 
-colors_bcells_sep <- c("blue", "lightblue", "green", "orange")
+colors_bcells_sep <- c("blue", "lightblue", "green", "blue", "orange")
 names(colors_bcells_combined) <- genes_bcells
 names(colors_bcells_sep) <- genes_bcells
 colors_bcells_combined
@@ -1463,7 +1324,7 @@ names(colors_vasc) <- genes_vasc
 # plot_list <- lapply(1:12, function(i) {
 #   ImageDimPlot(sobj_spleen, fov="", label = TRUE)  
 # })
-Idents(sobj) <- "Sample.ID"
+Idents(sobj_spleen5) <- "Sample.ID"
 
 plot_list <- list()
 
@@ -1474,46 +1335,46 @@ plot_list <- list()
 
   #molcol <-  c("yellow", "yellow", "yellow","blue")
   #names(molcol) <- c("Cd3e", "Cd3d", "Cd3g", "Cd19")
-  p <- plot_molecules (sobj, "fov31", mol_list = genes_regions, 
-                       colors_regions, "Regions Sample 31 - WT", show_legend=FALSE)
+  p <- plot_molecules (sobj_spleen5, "fov30", mol_list = genes_regions, 
+                       colors_regions, "Regions Sample 30 - WT", show_legend=FALSE)
   plot_list[[1]] <- ggplotGrob(p)
   
-  p <- plot_molecules (sobj, "fov32", mol_list = genes_regions, 
+  p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_regions, 
                        colors_regions, "Sample 32 - Hetero", show_legend=FALSE)
   plot_list[[2]] <- ggplotGrob(p)
   
-  p <- plot_molecules (sobj, "fov34", mol_list = genes_regions, 
+  p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_regions, 
                        colors_regions, "Sample 34 -Homoz", show_legend=TRUE)
   plot_list[[3]] <- ggplotGrob(p)
   
 
   ############################
   # B cells
-  p <- plot_molecules (sobj, "fov31", mol_list = genes_bcells, 
-                       colors_bcells_combined, "B-cells  Sample 31 - WT", show_legend=FALSE)
+  p <- plot_molecules (sobj_spleen5, "fov30", mol_list = genes_bcells, 
+                       colors_bcells_combined, "B-cells  Sample 30 - WT", show_legend=FALSE)
   plot_list[[4]] <- ggplotGrob(p)
   
-  p <- plot_molecules (sobj, "fov32", mol_list = genes_bcells, 
+  p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_bcells, 
                        colors_bcells_combined, "Sample 32 - Hetero", show_legend=FALSE)
   plot_list[[5]] <- ggplotGrob(p)
   
   # sobj, fov_name, mol_list, mol_colors, title
-  p <- plot_molecules (sobj, "fov34", mol_list = genes_bcells, 
+  p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_bcells, 
                        colors_bcells_combined, "Sample 34 -Homoz", show_legend=TRUE)
   plot_list[[6]] <- ggplotGrob(p)
   
   ############################
   # Bcells separate colors
-  p <- plot_molecules (sobj, "fov31", mol_list = genes_bcells, 
-                       colors_bcells_sep, "B cells (check Bcl2) Sample 31 - WT", show_legend=FALSE)
+  p <- plot_molecules (sobj_spleen5, "fov30", mol_list = genes_bcells, 
+                       colors_bcells_sep, "B cells (check Bcl2) Sample 30 - WT", show_legend=FALSE)
   plot_list[[7]] <- ggplotGrob(p)
   
-  p <- plot_molecules (sobj, "fov32", mol_list = genes_bcells, 
+  p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_bcells, 
                        colors_bcells_sep, "Sample 32 - Hetero", show_legend=FALSE)
   plot_list[[8]] <- ggplotGrob(p)
   
   # sobj, fov_name, mol_list, mol_colors, title
-  p <- plot_molecules (sobj, "fov34", mol_list = genes_bcells, 
+  p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_bcells, 
                        colors_bcells_sep, "Sample 34 -Homoz", show_legend=TRUE)
   plot_list[[9]] <- ggplotGrob(p)
   
@@ -1521,16 +1382,16 @@ plot_list <- list()
   #############################
   # Vasc 
   
-  p <- plot_molecules (sobj, "fov31", mol_list = genes_vasc, 
-                       colors_vasc, "Vasculature Sample 31 - WT", show_legend=FALSE)
+  p <- plot_molecules (sobj_spleen5, "fov30", mol_list = genes_vasc, 
+                       colors_vasc, "Vasculature Sample 30 - WT", show_legend=FALSE)
   plot_list[[10]] <- ggplotGrob(p)
   
-  p <- plot_molecules (sobj, "fov32", mol_list = genes_vasc, 
+  p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_vasc, 
                        colors_vasc, "Sample 32 - Hetero", show_legend=FALSE)
   plot_list[[11]] <- ggplotGrob(p)
-  
+  p
   # sobj, fov_name, mol_list, mol_colors, title
-  p <- plot_molecules (sobj, "fov34", mol_list = genes_vasc, 
+  p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_vasc, 
                        colors_vasc, "Sample 34 -Homoz", show_legend=TRUE)
   plot_list[[12]] <- ggplotGrob(p)
   
@@ -1575,59 +1436,59 @@ plot_list2 <- list()
 
 #molcol <-  c("yellow", "yellow", "yellow","blue")
 #names(molcol) <- c("Cd3e", "Cd3d", "Cd3g", "Cd19")
-p <- plot_molecules (sobj, "fov31", mol_list = genes_senescence[1:4] , 
+p <- plot_molecules (sobj_spleen5, "fov31", mol_list = genes_senescence[1:4] , 
                      colors_senescence_sep, "Senescence I Sample 31 - WT", show_legend=FALSE)
 plot_list2[[1]] <- ggplotGrob(p)
 
-p <- plot_molecules (sobj, "fov32", mol_list = genes_senescence[1:4] , 
+p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_senescence[1:4] , 
                      colors_senescence_sep, "Sample 32 - Hetero", show_legend=FALSE)
 plot_list2[[2]] <- ggplotGrob(p)
 
-p <- plot_molecules (sobj, "fov34", mol_list = genes_senescence[1:4] , 
+p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_senescence[1:4] , 
                      colors_senescence_sep, "Sample 34 -Homoz", show_legend=TRUE)
 plot_list2[[3]] <- ggplotGrob(p)
 
 #####################
-p <- plot_molecules (sobj, "fov31", mol_list = genes_senescence[5:7] , 
+p <- plot_molecules (sobj_spleen5, "fov31", mol_list = genes_senescence[5:7] , 
                      colors_senescence_sep, "Senescence II Sample 31 - WT", show_legend=FALSE)
 plot_list2[[4]] <- ggplotGrob(p)
 
-p <- plot_molecules (sobj, "fov32", mol_list = genes_senescence[5:7] , 
+p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_senescence[5:7] , 
                      colors_senescence_sep, "Sample 32 - Hetero", show_legend=FALSE)
 plot_list2[[5]] <- ggplotGrob(p)
 
-p <- plot_molecules (sobj, "fov34", mol_list = genes_senescence[5:7] , 
+p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_senescence[5:7] , 
                      colors_senescence_sep, "Sample 34 -Homoz", show_legend=TRUE)
 plot_list2[[6]] <- ggplotGrob(p)
 
 
 ############################
 # IL/chemokines
-p <- plot_molecules (sobj, "fov31", mol_list = genes_special_il, 
+p <- plot_molecules (sobj_spleen5, "fov31", mol_list = genes_special_il, 
                      colors_il_combined, "SASP I Sample 31 - WT", show_legend=FALSE)
 plot_list2[[7]] <- ggplotGrob(p)
 
-p <- plot_molecules (sobj, "fov32", mol_list = genes_special_il, 
+p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_special_il, 
                      colors_il_combined, "Sample 32 - Hetero", show_legend=FALSE)
 plot_list2[[8]] <- ggplotGrob(p)
 
 # sobj, fov_name, mol_list, mol_colors, title
-p <- plot_molecules (sobj, "fov34", mol_list = genes_special_il, 
+p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_special_il, 
                      colors_il_combined, "Sample 34 -Homoz", show_legend=TRUE)
 plot_list2[[9]] <- ggplotGrob(p)
 
 ############################
 # IL/chemokines separate colors
-p <- plot_molecules (sobj, "fov31", mol_list = genes_special_il, 
+p <- plot_molecules (sobj_spleen5, "fov31", mol_list = genes_special_il, 
                      colors_il_sep, "SASP I Sample 31 - WT", show_legend=FALSE)
 plot_list2[[10]] <- ggplotGrob(p)
 
-p <- plot_molecules (sobj, "fov32", mol_list = genes_special_il, 
+p <- plot_molecules (sobj_spleen5, "fov32", mol_list = genes_special_il, 
                      colors_il_sep, "Sample 32 - Hetero", show_legend=FALSE)
 plot_list2[[11]] <- ggplotGrob(p)
 
 # sobj, fov_name, mol_list, mol_colors, title
-p <- plot_molecules (sobj, "fov34", mol_list = genes_special_il, 
+p <- plot_molecules (sobj_spleen5, "fov34", mol_list = genes_special_il, 
                      colors_il_sep, "Sample 34 -Homoz", show_legend=TRUE)
 plot_list2[[12]] <- ggplotGrob(p)
 
@@ -1663,40 +1524,40 @@ dev.off()
 ####### 
 # Crop for slide 5, spleen only
 
-colnames(sobj_spleen@meta.data)
-table(sobj_spleen@meta.data$spatialclust_a57_1_assignments)
+colnames(sobj_spleen5@meta.data)
+table(sobj_spleen5@meta.data$spatialclust_a57_1_assignments)
 
-sobj_spleen@images
-table(sobj_spleen@meta.data$spatialclust_af7_1_assignments)
-Idents(sobj_spleen) <- "spatialclust_af7_1_assignments"
+sobj_spleen5@images
+table(sobj_spleen5@meta.data$spatialclust_af7_1_assignments)
+Idents(sobj_spleen5) <- "spatialclust_af7_1_assignments"
 #Idents(sobj_spleen) <- "spatialclust_a57_1_assignments" # not as good
 # ImageDimPlot(sobj_spleen, fov = "spleenfov",cols = "polychrome",
 #              coord.fixed = TRUE)
 
-niche_plot_spleen(sobj_spleen, "spleenfov",  "spatialclust_af7_1_assignments", "Niches in spleen")
+niche_plot_spleen(sobj_spleen5, "spleenfov",  "spatialclust_af7_1_assignments", "Niches in spleen")
 
 
 ## SpatialFeaturePlot
 #sobj_test <- subset(sobj, subset = Sample.ID == 31))
-cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], x = c(x_min, x_max), y = c(y_min, y_max), coords = "plot")
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], x = c(x_min, x_max), y = c(y_min, y_max), coords = "plot")
 
 # add new fov
-sobj[["zoom"]] <- cropped.coords
-sobj@images$zoom 
+sobj_spleen5[["zoom"]] <- cropped.coords
+sobj_spleen5@images$zoom 
 # visualize cropped area with cell segmentations & selected molecules
 DefaultBoundary(sobj[["zoom"]]) <- "segmentation"
-ImageDimPlot(sobj, fov = "zoom", axes = TRUE, border.color = "white", border.size = 0.1, cols = "polychrome",
+ImageDimPlot(sobj_spleen5, fov = "zoom", axes = TRUE, border.color = "white", border.size = 0.1, cols = "polychrome",
              coord.fixed = FALSE, molecules = c("Cd3e", "Cd3d"), nmols = 10000)
 
 
 
 
-DefaultBoundary(sobj[["fov30"]]) <- "segmentation" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov30"]]) <- "segmentation" # sets cell segmentation outline
 #DefaultBoundary(sobj[["fov30"]]) <- "tissue" # sets tissue outline
 Idents(sobj) <- "Sample.ID"
 molcol <-  c("yellow", "yellow", "yellow","blue")
 names(molcol) <- c("Cd3e", "Cd3d", "Cd3g", "Cd19")
-p <- ImageDimPlot(sobj, fov = "fov31", axes = FALSE, # border.color = "white", border.size = 0.1, 
+p <- ImageDimPlot(sobj_spleen5, fov = "fov31", axes = FALSE, # border.color = "white", border.size = 0.1, 
              cols = "polychrome",
              coord.fixed = TRUE, 
              molecules = c("Cd3e", "Cd3d", "Cd3g", "Cd19"), 
@@ -1709,7 +1570,7 @@ p <- ImageDimPlot(sobj, fov = "fov31", axes = FALSE, # border.color = "white", b
 p
 
 
-SpatialFeaturePlot(sobj,  features = c("Cd3e", "Cd3d"), slot="counts") 
+SpatialFeaturePlot(sobj_spleen5,  features = c("Cd3e", "Cd3d"), slot="counts") 
                    
 
 

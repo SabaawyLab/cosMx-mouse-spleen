@@ -26,6 +26,7 @@
 
 require(tidyverse)
 require(data.table)
+library(readxl)
 library(Seurat)
 
 options(Seurat.object.assay.version = "v5")
@@ -59,83 +60,51 @@ load_seurat_object <- function(seurat.filename) {
   return(sobj)
 }
 
-# TODO: Needed?
 
-#'  write out the expression matrix from a Seurat object to file
-#'
-#' @param seurat_obj The Seurat object
-#' @param filename The filename for the matrix data
-#' @return success boolean
+#' With a Seurat object created with LoadNanostring(), add the metatdata from a flat file
+#' 
+#' @param sobj The Seurat object
+#' @param metadata_file The metadata file to load
+#' @return The Seurat object with metadata rownames relabeled
 #' @examples
-#' success <- export_seurat_expr_matrix(seurat_obj, "data/seurat_counts.csv")
-# export_seurat_expr_matrix <- function(seurat_obj, filename) {
-#   # write out the expression matrix
-#   # TODO: use the Default Assay rather than hardcoding RNA
-#   write.csv(as.matrix(seurat_obj@assays$RNA@counts), file = filename)
-#   return(true)
-# }
-
-# export_seurat_metadata <- function(seurat_obj, filename) {
-#   # write out the metadata
-#   metadata <- get_metadata(seurat_obj)
-#   write.csv(metadata, file = filename)
-# }
-# 
-# export_seurat_spatial <- function(seurat_obj, filename) {
-#   # write out the spatial data
-#   spatial <- seurat_obj@spatial
-#   write.csv(spatial, file = filename)
-# }
-
-
-
-# Basic function to convert human to mouse gene names using BiomaRt
-convertHumanGeneList <- function(human_genes){
-  # set host to "dec2021.archive.ensembl.org" to use the archived version of Ensembl
-  # workaround for bug in latest host: https://support.bioconductor.org/p/9143914/, set host to prior version 105.
+#' sobj <- rename_keys(sobj)
+load_mouse_meta_load_missed <- function(sobj, metadata_file) {
+  # Seurat LoadNanostring() workaround to load metadata flat file including making sure the keys match
+  # this loads morph markers, measurements, X, Y, (global and local) and cell_ID
   
-  require("biomaRt")
-  human = useMart("ensembl", dataset = "hsapiens_gene_ensembl",  host = "https://dec2021.archive.ensembl.org")
-  mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl",  host = "https://dec2021.archive.ensembl.org")
+  df_obj_meta <- read.csv(metadata_file)
+  print(colnames(df_obj_meta))
   
-  lookup_list <- list()
-  for (human_gene in human_genes){
-    
-    lookup_pair <- getLDS(attributes = c("hgnc_symbol"),
-                          filters = "hgnc_symbol", values = human_gene, mart = human,
-                          attributesL = c("mgi_symbol"), martL = mouse)
-    
-    if (dim(lookup_pair)[1] == 0){
-      print(paste("No match found for", human_gene))
-      lookup_list[human_gene] <- ""
-    } else {
-      lookup_list[human_gene] <- unique(lookup_pair[1, 2])
-    }
-    
-    print(lookup_pair[,2])
-    
-    #lookup_list[[human_gene]] <- unique(genesV2[, 2])
+  df_obj_meta$cell_num = df_obj_meta$cell_ID 
+  df_obj_meta$key = paste0( df_obj_meta$cell_ID, "_", df_obj_meta$fov)
+  rownames(df_obj_meta) <- df_obj_meta$key
+  
+  head(rownames(sobj@meta.data))
+  print("Number of cells in Seurat object before adding metadata")
+  print(nrow(sobj@meta.data))
+  # AddMetaData needs the same records in the same order
+  print("Do the number of rows in the metadata file match the sobj?")
+  print(nrow(df_obj_meta) == nrow(sobj@meta.data)) # FALSE
+  lost_on_load <- setdiff(rownames(df_obj_meta), rownames(sobj@meta.data)) # about 100, drop these 
+  length(lost_on_load)
+  if(length(lost_on_load) > 0){
+    print ("These are the rows that are in the metadata file but not the Seurat obj, we will drop them from the metadata file.")
+    print(head(lost_on_load))
   }
+  print("expect 0 cell differences")
+  print(setdiff(rownames(sobj@meta.data), rownames(df_obj_meta))) # 0
   
-  #mousex <- unique(genesV2[, 2])
-  # Print the first 6 genes found to the screen
-  #print(head(mousex))
-  return(lookup_list)
+  # delete these from df_obj_metadata
+  df_obj_meta <- df_obj_meta[!rownames(df_obj_meta) %in% lost_on_load,]
+  print(setdiff(rownames(df_obj_meta), rownames(sobj@meta.data))) # should now be 0
+  
+  df_obj_meta$cell_ID <- df_obj_meta$key # restore cell_ID in standard format
+  sobj <- AddMetaData(sobj, metadata = df_obj_meta)
+  head(sobj@meta.data)
+  head(rownames(sobj@meta.data))
+  
+  return (sobj)  
 }
-# get genes from linked databases
-
-lookup_list <- convertHumanGeneList(c("TP53", "BRCA1", "EGFR"))
-lookup_list <- convertHumanGeneList(human_genes)
-length(lookup_list)
-
-# 
-# human_gene_list <-  c("TP53", "BRCA1", "EGFR") 
-mus_genes <- convertHumanGeneList(human_genes)
-mus_genes
-
-# add to CellProfileMtx
-human_cell_profile$mouse_genes <- mus_genes
-
 
 
 #' With a Seurat object, rename cells to be 'cell_id' in the metadata
@@ -159,14 +128,6 @@ rename_keys <- function(sobj) {
   #print(paste("Example of new cell rownames in colnames", paste(head(colnames(sobj),3), collapse=' ')))
 
   return (sobj)
-}
-
-
-flip_centroids <- function(df_meta){
-  min_y <- min(df_meta$CenterY_global_px)
-  max_y <- max(df_meta$CenterY_global_px)
-  df_meta$CenterY_global_px <- (max_y - df_meta$CenterY_global_px) + min_y
-  return(df_meta)
 }
 
 #' Load metadata flat file from cosMx flatfiles, 
@@ -403,7 +364,6 @@ subtract_neg_control <- function(obj, assay="RNA", layer="data"){
 
 #' remove the system control features from the counts matrix
 #' and return the modified Seurat object.  
-#' Tip: Do this before SCTransform to avoid needing to subtract these from more layers
 #'
 #' @param obj The Seurat object
 #' @param assay The assay to use, default is "Nanostring"
@@ -482,26 +442,117 @@ get_neg_control_means <- function(obj, assay="RNA", layer="counts"){
 ## Temporary PanCK/CD45 handling
 # Define the custom function
 # Note: These hard coded values were obtained by manually observing the Mean intensity values in the component images
-calculate_PanCK_PT <- function(value) {
+
+calculate_mouse_PanCK_PT <- function(value) {
   # if (is.na(value) || value > 4000) {
   #   return('na')
-  if (value > 700) {
+  if (value > 1200) {
     return(1)
   } else {
     return(0)
   }
 }
 
-calculate_CD45_PT <- function(value) {
+calculate_mouse_CD45_PT <- function(value) {
   if (is.na(value)) {
     return(0)
   } else
-    if (value > 200) {
+    if (value > 3000) {
       return(1)
     } else {
       return(0)
     }
 }
+
+#' Add FOV and Sample metadata to the Seurat object
+#'
+#' @param obj The Seurat object
+#' @df_fov_meta dataframe with FOV and Sample metadata with columns 'fov' and 'Run_Tissue_name' to match the object's metadata as keys
+#' @return Seurat Object
+#' @examples
+#' obj <- add_sample_metadata(obj, df_fov_meta)
+add_mouse_sample_metadata <- function(obj, df_fov_meta){
+  
+  df_metadata <- obj@meta.data
+  # Apply the function to create the PanCK.PT column
+  
+  
+  df_metadata2 <- merge(df_metadata, df_fov_meta, 
+                        by.x = c('fov', 'Run_Tissue_name'), by.y = c('fov', 'Run_Tissue_name'),
+                        suffixes = c(".x",""), how = 'inner')
+  print(head(df_metadata2))
+  
+  # df_metadata2$Mean.PanCK[is.na(df_metadata2$Mean.PanCK)] <- 0
+  # df_metadata2$Max.PanCK[is.na(df_metadata2$Max.PanCK)] <- 0
+  # df_metadata <- df_metadata %>%
+  #  mutate(PanCK.PT = sapply(Mean.PanCK, calculate_PanCK_PT))
+  
+  # sample thresholds
+  panCK.thresholds <- c("30" = 1200, "31" = 1200, "32" = 1200, "33" = 1200, "34" = 1200, "34" = 1200,
+                        "35" = 1200, "0" = 1200)
+  df_metadata2 <- df_metadata2 %>%
+    dplyr::mutate(
+      PanCK.threshold = panCK.thresholds[Sample.ID],  # Look up threshold by Sample.ID
+      PanCK.PT = as.integer(Mean.PanCK >= PanCK.threshold)  # Threshold comparison
+    )
+  print(table(df_metadata2$PanCK.PT))
+  df_metadata2$Mean.CD45[is.na(df_metadata2$Mean.CD45)] <- 0
+  df_metadata2$Max.CD45[is.na(df_metadata2$Max.CD45)] <- 0
+  CD45.thresholds <-  c("30" = 3000, "31" = 3000, "32" = 3000, "33" = 3000, "34" = 3000, "34" = 3000,
+                        "35" = 3000, "0" = 3000)
+  
+  df_metadata <- df_metadata %>%
+    mutate(CD45.PT = sapply(Mean.CD45, calculate_mouse_CD45_PT))
+  df_metadata2 <- df_metadata2 %>%
+    mutate(CD45.threshold = CD45.thresholds[Sample.ID],          # Look up threshold by sample
+           CD45.PT = as.integer(Mean.CD45 >= CD45.threshold))
+  
+  print(table(df_metadata2$CD45.PT))
+  
+  cols_to_add <- c("cell_id", "CD45.PT", "PanCK.PT", "Mean.PanCK", "Mean.CD45",
+                   "PanCK.threshold", "CD45.threshold", colnames(df_fov_meta))
+  
+  cols_to_add <- c("cell_id", colnames(df_fov_meta))
+  
+  print(paste("cells before merge", nrow(df_metadata2)))
+  
+  #df_metadata2$PanCK.PT[is.na(df_metadata2$PanCK.PT)] <- 1
+  #df_metadata2$CD45.PT[is.na(df_metadata2$CD45.PT)] <- 0
+  
+  print(paste("cells after merge", nrow(df_metadata2)))
+  
+  rownames(df_metadata2) <- df_metadata2$cell_id 
+  # keep only some columns
+  df_metadata2 <- df_metadata2[, cols_to_add]
+  
+  # Do we have all the slides?
+  table(df_metadata2$Run_Tissue_name)
+  nrow(df_metadata2) # same as full orig. ?
+  
+  # Identify rows with NA in cell_ID
+  na_rows <- is.na(df_metadata2$cell_ID)
+  # Display rows with NA in cell_ID
+  nrow(df_metadata2[na_rows, ])
+  
+  # do_rownames_match(sobj, df_metadata2) # FALSE 
+  # display cell_Ids in sobj not found in df_metadata2
+  cell_IDs_not_in_metadata <- setdiff(colnames(obj), rownames(df_metadata2))
+  print(length(cell_IDs_not_in_metadata)) # expect 0 
+  #cell_IDs_not_in_metadata[1:10]
+  cell_IDs_not_in_sobj <- setdiff(rownames(df_metadata2), colnames(obj)) # 0
+  # sort 
+  df_metadata2 <- df_metadata2[colnames(obj), ]
+  do_rownames_match(obj, df_metadata2) # try again?
+  
+  # preview metadata for cell_ID "c_4_18_1"
+  #df_metadata[df_metadata$cell_ID == "c_4_18_1",]
+  
+  obj <- AddMetaData(obj, df_metadata2)
+  
+  return(obj)
+}
+
+
 
 
 #' Add FOV and Sample metadata to the Seurat object
@@ -686,7 +737,7 @@ plot_celltypes <- function(cell_counts_df, group.by="Sample.ID", title="by Sampl
 }
 
 #' Given a seurat object (e.g. maybe a subset), a vector of negative control means, and a title suffix,
-#' Run InSituType and plot the results
+#' Run InSituType fully supervised and plot the results
 #' Returns the cell_type assignments by cell_id as a "sup" list, aka, what InSituType returns
 #'
 #' @param obj 
@@ -698,13 +749,13 @@ plot_celltypes <- function(cell_counts_df, group.by="Sample.ID", title="by Sampl
 #' @return sup a list of cell types by cell id
 #' @examples
 #' run_intitu_type (sobj_fov24, negmenas, "lung FOV24 only", "cell_type", insitu_matrix_He)
-run_insitu_type <- function(obj, negmeans, title_suffix="", group.by="Sample.ID", insitu_matrix, results_dir){
+run_insitu_type_sup <- function(obj, negmeans, title_suffix="", group.by="Sample.ID", insitu_matrix, results_dir){
   
   # align cells in negmeans with cells in obj
   df_meta = obj@meta.data
   # Get the mean of the negative controls, already calculated above. 
   
-  counts_matrix <- GetAssayData(object = obj, assay = "SCT", layer="counts")
+  counts_matrix <- GetAssayData(object = obj, assay = "RNA", layer="counts")
   counts <- counts_matrix %>%
     as.matrix() %>%
     t()
@@ -737,10 +788,6 @@ run_insitu_type <- function(obj, negmeans, title_suffix="", group.by="Sample.ID"
     mutate(!!group.by := gsub(" ", "_", .data[[group.by]])) %>%
     select(!!group.by, cell_type)
   
-  # df_meta <- df_meta %>%
-  #   mutate(Run_Tissue_name = gsub(" ", "_", Run_Tissue_name)) %>%
-  #   select(Run_Tissue_name, cell_type)
-  # 
   df_celltype <- df_meta %>%
     group_by_at(c(group.by, "cell_type")) %>%
     summarise(count = n(), .groups = 'drop')
@@ -748,7 +795,7 @@ run_insitu_type <- function(obj, negmeans, title_suffix="", group.by="Sample.ID"
   p <- plot_celltypes(df_celltype, group.by, title_suffix)
   ggsave(paste(results_dir, paste0("CellType_by_",group.by,"_",sanitize_name(title_suffix),".png")), plot=p, width = 10, height = 6, dpi = 300)
   
-  # requires PCA to be run
+  # DoHeatmap requires PCA to be run
   #p2 <- DoHeatmap(obj, features=TopFeatures(obj, dim=1, nfeatures=20))
   #ggsave(paste(results_dir, paste0("InSitu_Heatmap_for_",sanitize_name(title_suffix),".png")), 
   #       plot=p2, width = 10, height = 6, dpi = 300)
@@ -757,15 +804,29 @@ run_insitu_type <- function(obj, negmeans, title_suffix="", group.by="Sample.ID"
   
 }
   
-
-run_insitu_type2 <- function(obj, negmeans, n_clusts = 0,title_suffix="", group.by="Sample.ID", insitu_matrix, results_dir){
+#' Given a seurat object (e.g. maybe a subset), a vector of negative control means, and a title suffix,
+#' Run InSituType unsupervised or semisupervised and plot the results
+#' Returns the cell_type assignments by cell_id as a "sup" list, aka, what InSituType returns
+#'
+#' @param obj 
+#' @param negmeans a labelled list of negative control means by cell_id
+#' @param title_suffix a string to append to the Title of the plot
+#' @param group.by a string to group the cells by e.g. Run_Tissue_name
+#' @param insitu_matrix a matrix of Cell Type average gene expressions: "Cell Profile Matrix"
+#' @param results_dir the path to save plots
+#' @param colors vector of named colors for the plot
+#' @return sup a list of cell types by cell id
+#' @examples
+#' run_insitu_type_unsup (sobj, negmenas, 5, "Mouse Spleen", "Sample.ID", cell_profile_matrix, results_dir)
+run_insitu_type_unsup <- function(obj, negmeans, n_clusts = 0,title_suffix="", group.by="Sample.ID", insitu_matrix, results_dir,
+                                  colors){
 
   set.seed(0)
   # align cells in negmeans with cells in obj
   df_meta = obj@meta.data
   # Get the mean of the negative controls, already calculated above. 
   
-  counts_matrix <- GetAssayData(object = obj, assay = "SCT", layer="counts")
+  counts_matrix <- GetAssayData(object = obj, assay = "RNA", layer="counts")
   counts <- counts_matrix %>%
     as.matrix() %>%
     t()
@@ -782,7 +843,7 @@ run_insitu_type2 <- function(obj, negmeans, n_clusts = 0,title_suffix="", group.
     group.by <- "Run_Tissue_name"
   }
   # Run InSituType
-  sup <- insitutype(x = counts,
+  unsup <- insitutype(x = counts,
                       neg = negmeans,
                       n_clusts = n_clusts,
                       cohort = NULL, # cohort_data,
@@ -791,11 +852,7 @@ run_insitu_type2 <- function(obj, negmeans, n_clusts = 0,title_suffix="", group.
                     )  
   
   # Plot the results
-  # Plot the AtoMx Cell type breakdowns by slide
-  # "spatialclust_61b859e8.677d.4cad.9cf5.44e03fe9960e_1_assignments"  # first one, supervised, about 30 types
-  # "spatialclust_fef9b11c.70b7.4905.b96d.0b80c5560fb7_1_assignments" # unsupervised, 20 clust
-  # RNA_nbclust_c5e1d3d8.0a17.443a.994b.9a20f297fd2c_1_clusters"   
-  df_meta$cell_type <- sup$clus
+  df_meta$cell_type <- unsup$clus
   
   df_meta <- df_meta %>%
     mutate(!!group.by := gsub(" ", "_", .data[[group.by]])) %>%
@@ -809,7 +866,7 @@ run_insitu_type2 <- function(obj, negmeans, n_clusts = 0,title_suffix="", group.
     group_by_at(c(group.by, "cell_type")) %>%
     summarise(count = n(), .groups = 'drop')
   
-  p <- plot_celltypes(df_celltype, group.by, title_suffix)
+  p <- plot_celltypes(df_celltype, group.by, title_suffix, colors)
   ggsave(paste(results_dir, paste0("CellType_by_",group.by,"_",sanitize_name(title_suffix),".png")), plot=p, width = 10, height = 6, dpi = 300)
   
   # requires PCA to be run
@@ -817,7 +874,7 @@ run_insitu_type2 <- function(obj, negmeans, n_clusts = 0,title_suffix="", group.
   #ggsave(paste(results_dir, paste0("InSitu_Heatmap_for_",sanitize_name(title_suffix),".png")), 
   #       plot=p2, width = 10, height = 6, dpi = 300)
   
-  return(sup)
+  return(unsup)
   
 }
 
@@ -1110,7 +1167,6 @@ get_DEGs <- function(sobj, ident="Genotype", cluster_name="post", df_gene_data, 
   table(sobj$Sample.ID)
   
   Idents(sobj) <- ident
-  #sobj <- PrepSCTFindMarkers(sobj, assay = assay, verbose = TRUE)
   markers <- FindAllMarkers(sobj, assay=assay, slot="data", only.pos = FALSE, verbose=TRUE, recorrect_umi = TRUE) # , min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE)
   
   head(x = markers)
@@ -1143,6 +1199,19 @@ get_DEGs <- function(sobj, ident="Genotype", cluster_name="post", df_gene_data, 
   return(df_degs)
 }
 
+#' Given a dataframe of differentially expressed genes from FindMarkers, plot a volcano plot
+#'
+#' @param df_degs
+#' @param num_labels Number of top fold change genes to label
+#' @param title for the volcano plot heading and filename
+#' @param results_dir directory to save the plot
+#' @param plot_height height of the plot
+#' @param plot_width width of the plot
+#' @param special_labels vector of gene names to label
+#' @param use_repel use ggrepel to avoid overlapping labels
+#' @return dataframe of cosMx gene display names with annotations
+#' @examples
+#' df <- plot_volcano_degs (df_degs, num_labels = 50, title="ConditionAvB", results_dir_for_volcanos)
 plot_volcano_degs <- function(df_degs, num_labels = 50, title="", results_dir, 
                               plot_height=10, plot_width=10, special_labels=NULL, use_repel=TRUE) {
   
@@ -1150,7 +1219,6 @@ plot_volcano_degs <- function(df_degs, num_labels = 50, title="", results_dir,
   # top_genes <- df_degs %>%
   #   dplyr::filter(HighFoldChangeLowPval == "Y") 
 
-  
   if (missing(special_labels)) {
     special_labels <- c()
     print ("No special labels, proceed with num_labels")
@@ -1207,104 +1275,15 @@ plot_volcano_degs <- function(df_degs, num_labels = 50, title="", results_dir,
     return(p)
 }
 
-plot_waterfall_degs <- function(sobj, df_degs, num_labels = 50, title="", results_dir, 
-                              plot_height=10, plot_width=10, special_labels=NULL, use_repel=TRUE) {
-  
-  # Expect a column names "HighFoldChangeLowPval" with values "Y" or "N"
-  # top_genes <- df_degs %>%
-  #   dplyr::filter(HighFoldChangeLowPval == "Y") 
-  
-  
-  if (missing(special_labels)) {
-    special_labels <- c()
-    print ("No special labels, proceed with num_labels")
-    top_genes <- df_degs %>%
-      dplyr::top_n(num_labels, wt = abs(avg_log2FC)) %>%
-      dplyr::select(1:10)
-    print(head(top_genes))
-  } else {
-    top_genes <- df_degs %>%
-      dplyr::filter(Gene %in% special_labels & HighFoldChangeLowPval == "Y") %>%
-      dplyr::select(1:10)
-    #top_genes <- as.data.frame(special_labels)
-    df_degs$HighFoldChangeLowPval <- ifelse(df_degs$Gene %in% special_labels & 
-                                              df_degs$HighFoldChangeLowPval == "Y", "Special", 
-                                            df_degs$HighFoldChangeLowPval)
-    print(head(top_genes))
-  }
-  
-  # Cap very low p-values at a threshold (e.g.,tried 1e-300, now 1e-400) to avoid infinite values
-  df_degs$p_val_adj <- pmax(df_degs$p_val_adj, 1e-300)
-  
-  # p <- ggplot(df_degs, aes(x = avg_log2FC, y = -log10(p_val_adj), color = HighFoldChangeLowPval)) +
-  #   geom_point(alpha = 0.6) +
-  #   scale_color_manual(values = c("Y" = "red", "N" = "gray", "Special" = "darkred")) +
-  #   #theme_minimal() +
-  #   labs(title = paste("DEGs",title),
-  #        x = "Log2 Fold Change",
-  #        y = "-Log10 Adjusted P-Value") +
-  #   theme(legend.title = element_blank(),
-  #         panel.background = element_rect(fill = "white", color = NA),  # Set panel background to white
-  #         plot.background = element_rect(fill = "white", color = NA)) +
-  #   
-  #   guides(color = "none")    # Hide the color legend
-  #ylim(0,310)
-  # Add labels for the top 10 highest fold change genes
-  #coord_cartesian(ylim = c(0, 50)) +
-  # if (use_repel == TRUE) {
-  #   p <- p + ggrepel::geom_text_repel(data = top_genes, aes(label = Gene), 
-  #                                     size = 3, 
-  #                                     box.padding = 0.3, 
-  #                                     max.overlaps = Inf)
-  # }
-  # else {
-  #   p <- p + geom_text(data = top_genes, aes(label = Gene),
-  #                      size = 3,
-  #                      vjust = 1,
-  #                      hjust = 1)
-  # }
-  
-  
-  p <- WaterfallPlot(sobj, features = top_genes)
-  
-  print(p)
-  #ggplot2::ggsave(paste0(results_dir, "/WaterfallPlot_", sanitize_name(title), ".png"), 
-  #                plot=p, 
-  #                dpi = 300)
-  return(p)
-}
-
-plot_volcano_degs_test <- function(df_degs, num_labels = 50, title="", results_dir, 
-                              plot_height=10, plot_width=10) {
-  
-  # Expect a column names "HighFoldChangeLowPval" with values "Y" or "N"
-  # top_genes <- df_degs %>%
-  #   dplyr::filter(HighFoldChangeLowPval == "Y") 
-  top_genes <- df_degs %>%
-    dplyr::top_n(num_labels, wt = abs(avg_log2FC))
-  
-  # Cap very low p-values at a threshold (e.g., 1e-300)
-  df_degs$p_val_adj <- pmax(df_degs$p_val_adj, 1e-300)
-  
-  p <- ggplot(df_degs, aes(x = avg_log2FC, y = -log10(p_val_adj), color = HighFoldChangeLowPval)) +
-    geom_point(alpha = 0.6) +
-    scale_color_manual(values = c("Y" = "red", "N" = "gray")) +
-    #theme_minimal() +
-    labs(title = paste("DEGs",title),
-         x = "Log2 Fold Change",
-         y = "-Log10 Adjusted P-Value") +
-    theme(legend.title = element_blank(),
-          panel.background = element_rect(fill = "white", color = NA),  # Set panel background to white
-          plot.background = element_rect(fill = "white", color = NA)) +
-    
-    guides(color = "none") +   # Hide the color legend
-
-  print(p)
-  return(p)
-}
-
-
-
+#' Given a dataframe of differentially expressed genes from pseudobulk analysis, plot a volcano plot
+#'
+#' @param df_degs
+#' @param num_labels Number of top fold change genes to label
+#' @param title for the volcano plot heading and filename
+#' @param results_dir directory to save the plot
+#' @return dataframe of cosMx gene display names with annotations
+#' @examples
+#' df <- plot_deseq_volcano_degs (df_degs, num_labels = 50, title="ConditionAvB", results_dir_for_volcanos)
 plot_deseq_volcano_degs <- function(df_degs, num_labels = 50, title="", results_dir) {
   
   top_genes <- df_degs %>%
@@ -1335,39 +1314,42 @@ plot_deseq_volcano_degs <- function(df_degs, num_labels = 50, title="", results_
   return(p)
 }
 
-fetch_gene_data <- function(sobj, genes_list){
-  # given a subset object and list of genes, fetch normalized data
-  # and metadata needed for typical boxplots
-  norm_data <- FetchData(sobj, gene_names, layer = "data")
-  df_meta <- sobj@meta.data[c('TimePoint','Sample.ID','Sample.Label', 'PatientID')]
-  gene_data <- merge(norm_data, df_meta, how="inner", by="row.names")
-  return (gene_data)
-  
-}
 
 
-
-
+#' Render a plot of the molecules listed spatially 
+#' This is useful for building a grid of multiple samples for comparison
+#'
+#' @param sobj
+#' @param fov_name fov_name of the sample, can be the full size slide fov or a Cropped fov
+#' @param mol_list List of molecules to plot
+#' @param mol_colors List of colors for the molecules
+#' @param title for the volcano plot heading and filename
+#' @param show_legend boolean whether to show legend
+#' @return plot of a single sample
+#' @examples
+#' df <- plot_molecules (df_degs, num_labels = 50, title="ConditionAvB", results_dir_for_volcanos)
 plot_molecules <- function (sobj, fov_name, mol_list, mol_colors, title, show_legend=TRUE, molsize=0.1) {
-  
+
+  print(mol_list)
+  print(mol_colors)
   if (show_legend == TRUE) {
     legend.pos = "right"
   }
   else {
     legend.pos = "none"
   }
-  p <- ImageDimPlot(sobj, fov = fov_name, axes = FALSE, # border.color = "white", border.size = 0.1, 
+  p <- ImageDimPlot(sobj, fov = fov_name, axes = FALSE, # border.color = "white", border.size = 0.1,
                     cols = "polychrome",
-                    coord.fixed = TRUE, 
+                    coord.fixed = TRUE,
                     flip_xy = FALSE,
-                    molecules = mol_list, 
+                    molecules = mol_list,
                     nmols = 20000,
                     #crop=TRUE,
-                    mols.cols = mol_colors, 
+                    mols.cols = mol_colors,
                     mols.size = molsize, mols.alpha = 0.5,
                     dark.background = FALSE) +
     ggtitle(title) +
-    #scale_y_reverse() + 
+    #scale_y_reverse() +
     theme_minimal() +
     theme(legend.title = element_blank(),
           text = element_text(size = 10),
@@ -1380,21 +1362,30 @@ plot_molecules <- function (sobj, fov_name, mol_list, mol_colors, title, show_le
           legend.position = legend.pos
           ) +
     coord_fixed(ratio=1)
-  
+
   return (p)
-  
+
 }
 
+#' This is useful for building a grid of multiple samples for comparison
+#'
+#' @param sobj
+#' @param fov_name fov_name of the sample, can be the full size slide fov or a Cropped fov
+#' @param colname column name of the metadata for niche to color by (e.g., "spatialclust_af7_1_assignments")
+#' @param title for the volcano plot heading and filename
+#' @return plot of a single sample
+#' @examples
+#' p <- niche_plot_spleen(sobj_spleen, "spleenfov",  "spatialclust_af7_1_assignments", "Niches in spleen")
 niche_plot_spleen <- function(sobj, fov_name, colname, title  ) {
-  
+
   Idents(sobj) <- colname
-  p <- ImageDimPlot(sobj, fov = fov_name, axes = FALSE, # border.color = "white", border.size = 0.1, 
+  p <- ImageDimPlot(sobj, fov = fov_name, axes = FALSE, # border.color = "white", border.size = 0.1,
                     cols = "polychrome",
-                    coord.fixed = TRUE, 
+                    coord.fixed = TRUE,
                     flip_xy = FALSE,
                     dark.background = FALSE) +
     ggtitle(title) +
-    #scale_y_reverse() + 
+    #scale_y_reverse() +
     theme_minimal() +
     theme(legend.title = element_blank(),
           text = element_text(size = 10),
@@ -1406,7 +1397,7 @@ niche_plot_spleen <- function(sobj, fov_name, colname, title  ) {
           axis.text.y = element_blank()
     ) +
     coord_fixed(ratio=1)
-  
+
   return(p)
 }
 
@@ -1416,7 +1407,7 @@ niche_plot_spleen <- function(sobj, fov_name, colname, title  ) {
 #' @return dataframe of cosMx gene display names with annotations
 #' @examples
 #' df <- get_nanostring_gene_annotations ("path/to/gene_annotations.xlsx")
-get_nanostring_gene_annotations <- function (gene_annotations_file) {
+get_nanostring_mouse_gene_annotations <- function (gene_annotations_file) {
   
   df_gene_data <- as.data.frame(read_excel(ns_gene_fn, sheet = 2, skip = 1, col_names = TRUE))
   head(df_gene_data)
@@ -1424,7 +1415,7 @@ get_nanostring_gene_annotations <- function (gene_annotations_file) {
   colnames(df_gene_data) <- sanitize_name(colnames(df_gene_data))
   # remove copywrite line by Gene_Symbol_s_ not NA
   df_gene_data <- df_gene_data[!is.na(df_gene_data$Gene_Symbol_s_),]
-  df_gene_data <- df_gene_data[,c("Display_Name", "Gene_Symbol_s_", "Gene_Name_s_", "Alias_es_" )]
+  df_gene_data <- df_gene_data[,c("Display_Name", "Human_Gene", "Gene_Symbol_s_", "Gene_Name_s_", "Alias_es_" )]
   df_gene_data <- df_gene_data %>% dplyr::rename(Display_Name = Display_Name, 
                                                  Gene_Symbol = Gene_Symbol_s_, 
                                                  Gene_Long_Name = Gene_Name_s_, 
@@ -1449,3 +1440,186 @@ get_nanostring_gene_annotations <- function (gene_annotations_file) {
   
 }
 
+#' Given a nanostring/Bruker provided gene annotations file, extract the list of genes annotated for cell typing.
+#'
+#' @param gene_annotations_file e.g. LBL-11178-03-Human-Universal-Cell-Characterization-Panel-Gene-Target-List.xlsx 
+#' @return list of genes with a "+" in the requested annotation column
+#' @examples
+#' genes_for_celltyping <- get_nanostring_celltyping_genes ("path/to/gene_annotations.xlsx", "Cell Typing")
+get_nanostring_celltyping_genes <- function (gene_annotations_file, colname = "Cell Typing") {
+  
+  df_gene_data <- as.data.frame(readxl::read_excel(ns_gene_fn, sheet = 3, skip = 1, col_names = TRUE))
+  head(df_gene_data, 3)
+  print(nrow(df_gene_data))
+  cols_to_keep <- c("Gene", colname)
+  df_gene_data <- df_gene_data %>%
+    dplyr::select(all_of(cols_to_keep)) %>%
+    dplyr::filter(df_gene_data[[colname]] == "+")
+  
+  gene_list <- df_gene_data$Gene
+  
+  return(gene_list) # over 200 genes
+  
+}
+
+
+#' Given a dataframe including SampleID and Run_Tissue, return the bounding box of the SampleID
+#'
+#' @param df_meta dataframe including SampleID, Run_Tissue, and global pixel coordinates
+#' @return matrix of x,y min and max coordinates (bounding box)
+#' @examples
+#' df <- get_bbox_of_sample (sobj@meta.data, "Slide2name", "S30")
+get_bbox_of_sample <- function(df_meta, Run_Tissue, SampleID) {
+  
+  df_meta2 <- df_meta %>%
+    dplyr::filter(Sample.ID == SampleID & Run_Tissue_name == Run_Tissue)
+  
+  padding <- 0
+  x_min <- round(min(df_meta2$CenterX_global_px)) - padding
+  y_min <- round(min(df_meta2$CenterY_global_px)) - padding
+  x_max <- round(max(df_meta2$CenterX_global_px)) + padding
+  y_max <- round(max(df_meta2$CenterY_global_px)) + padding
+  print(paste(y_min, y_max, x_min, x_max))
+  
+  #sobj_fov <- subset(sobj, subset = Sample.ID %in% sample_ids )
+  # Create a 2x2 matrix
+  bounding_box <- matrix(c(y_min, y_max, x_min, x_max), nrow = 2, byrow = TRUE,
+                         dimnames = list(c("y", "x"), c("min", "max")))
+  
+  return(bounding_box)
+}
+
+#' Given a dataframe including fov and Run_Tissue, return the bounding box of the fov
+#'
+#' @param df_meta dataframe including SampleID, Run_Tissue, and global pixel coordinates
+#' @param Run_Tissue Run_Tissue_name 
+#' @fov_num fov number
+#' @return matrix of x,y min and max coordinates (bounding box)
+#' @examples
+#' df <- get_bbox_of_sample (sobj@meta.data, "Slide2name", "S30")
+get_bbox_of_fov <- function(df_meta, Run_Tissue, fov_num) {
+  
+  df_meta2 <- df_meta %>%
+    dplyr::filter(fov == fov_num & Run_Tissue_name == Run_Tissue)
+  
+  padding <- 0
+  x_min <- round(min(df_meta2$CenterX_global_px)) - padding
+  y_min <- round(min(df_meta2$CenterY_global_px)) - padding
+  x_max <- round(max(df_meta2$CenterX_global_px)) + padding
+  y_max <- round(max(df_meta2$CenterY_global_px)) + padding
+  print(paste(y_min, y_max, x_min, x_max))
+  
+  #sobj_fov <- subset(sobj, subset = Sample.ID %in% sample_ids )
+  # Create a 2x2 matrix
+  bounding_box <- matrix(c(y_min, y_max, x_min, x_max), nrow = 2, byrow = TRUE,
+                         dimnames = list(c("y", "x"), c("min", "max")))
+  
+  return(bounding_box)
+}
+
+
+#' Given a Seurat object, return the counts matrix as a dataframe by cell
+get_counts_subset_df <- function(sobj){
+  
+  exp_data <- as.matrix(GetAssayData(sobj, assay="RNA", layer="counts"))
+  class(exp_data)
+  dim(exp_data) # 1000 x 191K
+  # how to subset matrix by gene
+  
+  return(as.data.frame(t(exp_data)))
+}
+
+
+
+# Summarize the counts matrix by sample
+get_sample_pcts <- function(df_counts_mtx, sample_id) {
+  
+  df_pct_sample <- df_counts_mtx %>%
+    dplyr::select(c('Cdkn1a','Mki67','Lmna')) %>%
+    summarize(count = n(), # number of cells
+              Cdkn1a_count = sum(Cdkn1a > 0),
+              Mki67_count = sum(Mki67 > 0),
+              Lmna_count = sum(Lmna > 0), 
+              .groups = "drop") %>%
+    dplyr::filter(count > 0)  %>%
+    mutate( sample=sample_id,
+            pct_cells_Cdkn1a = (Cdkn1a_count / sum(count)) * 100,
+            pct_cells_Mki67 = (Mki67_count / sum(count)) * 100,
+            pct_cells_Lmna = (Lmna_count / sum(count)) * 100) %>%
+    dplyr::relocate(sample) # move sample first
+  
+  return(df_pct_sample)
+}
+
+# Summarize the counts matrix by sample. Hardcoded colnames, sorry. A bit fragile.
+get_sample_pcts_bycelltype <- function(df_ct, sample_id, celltype, marker_name) {
+  
+  df_pct_sample <- df_ct %>%
+    dplyr::select(c('Sample.ID.x', marker, 'CellType_sup.x')) %>%
+    dplyr::mutate(marker = df_ct[[marker_name]]) %>% 
+    dplyr::filter(Sample.ID.x == sample_id & CellType_sup.x == celltype) %>%
+    summarize(count = n(), # number of cells
+              marker_count = sum(marker_name > 0),
+              .groups = "drop") %>%
+    dplyr::filter(count > 0)  %>%
+    mutate(sample=sample_id,
+                       marker = marker_name,
+                       cell_type = cell_type,
+                       pct_cells_ = (marker_count / sum(count)) * 100) %>%
+    dplyr::relocate(sample) # move sample first
+  
+  return(df_pct_sample)
+}
+
+# Has some hardcoded columns (sorry)
+get_pct_fov_celltype <- function(df_ct, sample_id, cell_type, marker_name){
+  
+  df_pct_fov_celltype <- df_ct %>%
+    dplyr::select(c('fov', marker, 'CellType_sup.x', 'Sample.ID.x')) %>%
+    dplyr::mutate(marker = df_ct[[marker_name]]) %>% 
+    dplyr::filter(Sample.ID.x == sample_id & CellType_sup.x == cell_type) %>%
+    group_by(fov) %>%
+    summarize(count = n(), # number of cells
+              marker_count = sum(marker > 0),
+              .groups = "drop") %>%
+    dplyr::filter(count > 0)  %>%
+    mutate(sample=sample_id,
+           marker = marker_name,
+           cell_type = cell_type,
+           pct_cells_ = (marker_count / sum(count)) * 100) %>%
+    dplyr::relocate(sample) 
+  
+  return(df_pct_fov_celltype)
+}
+
+# Summarize the counts matrix by fov
+get_fov_pcts <- function(df_counts_mtx, sample_id) {
+  df_counts_mtx$fov <- sapply(df_counts_mtx$cell, parse_third_token)
+  df_pct_fov <- df_counts_mtx %>%
+    dplyr::select(c('fov','Cdkn1a','Mki67','Lmna')) %>%
+    dplyr::filter(Sample.ID == sample_id) %>%
+    group_by(fov) %>%
+    summarize(count = n(), # number of cells
+              Cdkn1a_count = sum(Cdkn1a > 0),
+              Mki67_count = sum(Mki67 > 0),
+              Lmna_count = sum(Lmna > 0), 
+              .groups = "drop") %>%
+    dplyr::filter(count > 0)  %>%
+    mutate(sample=sample_id,
+           pct_cells_Cdkn1a = (Cdkn1a_count / sum(count)) * 100,
+           pct_cells_Mki67 = (Mki67_count / sum(count)) * 100,
+           pct_cells_Lmna = (Lmna_count / sum(count)) * 100) %>%
+    dplyr::relocate(sample) 
+  
+  return(df_pct_fov)
+}
+
+
+
+pct_non_zero <- function(x) {
+  length(x[x >0]) / length(x) * 100
+}
+
+mean_non_zero <- function(x) {
+  mean(x[x >0])
+}

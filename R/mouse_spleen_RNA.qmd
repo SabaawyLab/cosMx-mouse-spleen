@@ -17,13 +17,25 @@ Purpose of script: load the Seurat data object produced by the AtoMx pipeline, g
 
 Use Seurat LoadNanostring() method from flatfiles (vs exported Seurat RDS) but either is fine. 1b. subtract Negative Probes from the counts matrix 1c. Apply QC filters to the Seurat object
 
-2\. Load Sample metadata per cell: 2a. FOV and Sample.ID assignments 2b. Apply panCK/CD45 phenotypes to cells where possible. 2c. overlay the pathology annotations to get additional meta: path_annot_id and name
+2\. Load Sample metadata per cell:
 
-3.  Normalization method: Total counts
+2a. FOV and Sample.ID assignments
+
+2b. Apply panCK/CD45 phenotypes to cells where possible (not done here).
+
+3.  Normalization method: Seurat Normalized
 
 3\. Apply Cell Typing to the Seurat object with InSituType
 
+PCA and Umap
+
 4\. plots and visualizations
+
+TBD:
+
+1.  Leiden Clusters and/or CellCharter -\> niches,
+2.  Cell-Cell Communications
+3.  Attractive plots. Note: Giotto has some very nice plots but loading Giotto requires a very specific folder structure, and the Composite Images it relies on for the morphology background are no longer output
 
 Author: Ann Strange Date Created: 2024-10-14
 
@@ -31,7 +43,7 @@ Author: Ann Strange Date Created: 2024-10-14
 
 content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
-## Running Code
+## Setup
 
 When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
 
@@ -61,6 +73,7 @@ library(readxl)
 library(openxlsx)
 library(grid)
 library(gridExtra)
+# library(Giotto)
 ```
 
 Setup variables, make sure to change paths for the files needed.
@@ -80,7 +93,7 @@ options(future.globals.maxSize= 10*1024*1024^2) # 10GB
 
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+Setup paths
 
 ```{r paths}
 #| echo: false
@@ -126,6 +139,19 @@ ns_gene_data <- 'LBL-11176-03-Mouse-Universal-Cell-Characterization-Gene-List.xl
 ns_gene_fn <- paste0(markers_dir, '/', ns_gene_data)
 df_gene_data <- get_nanostring_gene_annotations(ns_gene_fn)
 
+df_special_genes <- read.csv(paste0(markers_dir, '/GenesOfInterest_RNA_HES.csv'), header=TRUE, sep=",")
+colnames(df_special_genes) <- c('Display_Name', 'OfInterest_Reason', "Notes", "GroupAs", "Highlight")
+head(df_special_genes)
+
+#genes_special <- list(df_special_genes$Display_Name[1:47]) # 
+
+
+# left outer join with df_gene_data by RNA1K to gene 
+df_gene_data2 <- left_join(df_gene_data, df_special_genes, by ='Display_Name')
+#df_gene_data2$OfInterest_Reason[is.na(df_gene_data2$OfInterest_Reason)] <- " "
+head(df_gene_data2)
+nrow(df_gene_data2)
+df_gene_data <- df_gene_data2
 
 ```
 
@@ -171,14 +197,8 @@ genes_bcells <- df_special_genes %>%
   pull(Display_Name)
 genes_bcells 
 
-# genes_special_ne <- c("S100B" )
-# genes_p53 <- c("TP43", "RB1")
-# 
-# # don't bother plotting 
-# genes_low_tumor_expr <- c("KRT5", "KRT13")
-
 # left outer join with df_gene_data by RNA1K to gene 
-df_gene_data2 <- left_join(df_gene_data, df_special_genes, by ='Display_Name')
+df_gene_data2 <- left_join(df_gene_data, df_special_genes, by ='Display_Name', suffix=c("", ""))
 df_gene_data2$OfInterest_Reason[is.na(df_gene_data2$OfInterest_Reason)] <- " "
 df_gene_data2$Notes[is.na(df_gene_data2$Notes)] <- " "
 df_gene_data2$GroupAs[is.na(df_gene_data2$GroupAs)] <- " "
@@ -200,7 +220,7 @@ file.exists(paste0(metadata_dir, '/FOV_Sample_Ids_RNA.csv'))
 
 Load RNA labels for RNA marker attributes
 
-expect counts similar to this:
+expect counts similar to this for the 1K RNA panel:
 
 Endogenous Negative SystemControl
 
@@ -218,17 +238,18 @@ df_rna_lookup[df_rna_lookup$CodeClass != 'Endogenous', c('DisplayName','CodeClas
 print(table(df_rna_lookup$CodeClass))
 ```
 
-Load Seurat Data from Flatfiles
+## Skip: Load Seurat Data from Flatfiles
 
 This loads only the first slide (ending in "5") but both can be loaded and merged here.
 
 Normalization methods can be Total, Seurat, or Pearson. We use Seurat 'Normalize'
 
 ```{r loadnanostring}
+ #| echo: false
  
 obj_list <- list()
 negmeans_list <- list()
-for (i in 2:2){
+for (i in 1:2){
   print(i)
   print(slide_names[i])
   print(run_names[i])
@@ -271,15 +292,23 @@ for (i in 2:2){
   obj_list[[i]]
   
 }
-sobj <- obj_list[[i]]
+#sobj <- obj_list[[i]] # 270K cells to load one slide
 # If loading both slides, uncomment this line
-#sobj <- merge(obj_list[[1]], y = c(obj_list[[2]]))
+sobj <- merge(obj_list[[1]], y = c(obj_list[[2]]))
+#saveRDS(sobj, paste0(saved_rds_dir,"/sobj_after_Load1.rds"))
 
+#class(negmeans_list[[1]])
+negmeans_vec <- c(negmeans_list[[1]], negmeans_list[[2]])
+sum(negmeans_vec) # 21904 
+# Save for later in case of InSituType
+write.table(negmeans_vec, file = paste0(results_dir, "/negmeans_list.txt"), row.names=TRUE, col.names = FALSE)
 
 ```
 
 ```{r}
+
 print('hi')
+
 ```
 
 Add FOV and Sample Metdata
@@ -310,20 +339,33 @@ table(sobj@meta.data$Organ)
 table(sobj@meta.data$Genotype)
 sobj
 
+#saveRDS(sobj, paste0(saved_rds_dir,"/sobj_full_after_meta.rds"))
 ```
+
+## Subsetting
 
 Subset to only single slide (in case of having loaded both)
 
 ```{r subset1}
+#| echo: false
+#| message: false
+#| warning:false
 sobj_spleen <- subset(sobj, subset = Organ == "Spleen" & Sample.ID >= "30")
 sobj_spleen5 <- subset(sobj_spleen, subset = Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
 
-saveRDS(sobj_spleen5, paste0(saved_rds_dir,"/sobj_spleen5.rds"))
+dim(sobj)
+dim(sobj_spleen)
+dim(sobj_spleen5)
 
+#saveRDS(sobj_spleen5, paste0(saved_rds_dir,"/sobj_spleen5.rds"))
+
+#saveRDS(sobj, paste0(saved_rds_dir,"/sobj_spleen.rds"))
 
 ```
 
-Resume here to save a lot of time. This Seurat object is fully loaded with metadata
+# Resume Here
+
+Resume here to save a lot of time. This Seurat object is fully loaded including metadata
 
 ```{r resume}
 
@@ -331,7 +373,11 @@ sobj_spleen5 <- readRDS(paste0(saved_rds_dir,"/sobj_spleen5.rds"))
 
 ```
 
-Subset to Spleen only, the focus of this Analysis
+## Spleen Subsets
+
+Subset to Spleen only, the focus of this Analysis.
+
+The reason for subsetting to specific samples is that this automatically creates Seurat fovs with the bounding boxes for the extent of the sample, which makes spatial plots for a single sample easier. We'll look at numbers using the sobj_spleen subset but keep smaller subsets handy for image plots.
 
 ```{r subset}
 #| echo: false
@@ -344,7 +390,7 @@ feat_names <- rownames(sobj_spleen_even5)
 feat_names <- gsub("Cdkn1a", "P21", feat_names)
 rownames(sobj_spleen_even5) <- feat_names
 
-table(sobj_spleen@meta.data$Sample.ID)
+table(sobj_spleen5@meta.data$Sample.ID)
 # Focusing on only 3 samples, slide 5
 sobj_spleen30 <- subset(sobj_spleen5, subset = Sample.ID == 30 & 
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
@@ -361,7 +407,9 @@ sobj_spleen35 <- subset(sobj_spleen5, subset = Sample.ID == 35 &
 
 ```
 
-Spatial Feature Plots of key Senescence Genes
+## Spatial Feature Plots
+
+of key Senescence Genes
 
 ```{r featureplots}
 #| echo: false
@@ -375,7 +423,7 @@ p <- ImageFeaturePlot(sobj_spleen30, fov="Sabaawynewcore091320245",
                  size = 1,
                  coord.fixed=TRUE,
                  dark.background = FALSE) + 
-  plot_layout(ncol=3)
+  patchwork::plot_layout(ncol=3)
 print(p)
 # note: this returns patchworked object
 
@@ -386,7 +434,7 @@ p <- ImageFeaturePlot(sobj_spleen32, fov="Sabaawynewcore091320245",
                  features = features_genes, 
                  size = 1,
                  dark.background = FALSE) + 
-    plot_layout(ncol=3)
+    patchwork::plot_layout(ncol=3)
 ggsave(paste0(results_dir,"/spleen32_senescence_FeaturePlots.png"), plot = p, width = 10, height = 12, dpi = 300)
 
 
@@ -394,7 +442,7 @@ p <- ImageFeaturePlot(sobj_spleen34, fov="Sabaawynewcore091320245",
                  features = features_genes, 
                  size = 1,
                  dark.background = FALSE) + 
-  plot_layout(ncol=3)
+  patchwork::plot_layout(ncol=3)
 ggsave(paste0(results_dir,"/spleen34_senescence_FeaturePlots.png"), plot = p, width = 10, height = 12, dpi = 300)
 
 
@@ -403,31 +451,1496 @@ ggsave(paste0(results_dir,"/spleen34_senescence_FeaturePlots.png"), plot = p, wi
 
 CellTypes from AtoMx
 
+CellTyping was run in AtoMx by re-running this module of the pipeline, uploading different possible Cell Profile Matrices.
+
+Best:
+
+From the CosMx-Cell-Profiles repo, adapted the Human IO matrix for mouse by querying linked database in biomaRt.
+
+<https://github.com/Nanostring-Biostats/CosMx-Cell-Profiles>
+
+scRNA Mouse Spleen_MCA.RData from <https://github.com/Nanostring-Biostats/CellProfileLibrary/tree/master/Mouse/Adult>
+
 This celltype is the semisupervised InSituType + 5 clusters. cluster c appears to really be Macrophages
 
+Some of the other celltypes coming from AtoMx are below. When running cell typing multiple times, it's necessary to figure out which of these long column names is for the cell typing (or niches) you want, since they are all stored in the metatdata flatfile and the R Seurat object you can export from AtoMx. These will differ each time. Some options are to use table() to see what label counts seem to be the most recent celltyping attempt? I slightly prefer to run InSituType in R code for faster access to this data, but either way works. Here, I wanted to take representative screenshots in AtoMx including cell types so I used the AtoMx celltyping returned in this field: "RNA_nbclust_f89a7c0e.a01e.4e44.9bbc.67ffbba70793_1_clusters" to match the fully supervised AtoMx celltyping found in the menu under "WIO" (does not have labels a,b,c,d,e)
+
+What are the other celltyping attempts in this dataset:
+
+a57c6ac1.3d04.4093.af08.340b8f4c3e0d was run with the Mouse Brain reference and has celltypes line Astrocytes, Ependymal cells, Glia, also 30 unsupervised clusters. Could use these for the mouse brain. (but 30 is too many unclassified cell types).
+
+4786da16.29dc.44c6.ad08.97cef88cc2ee uses our Mouse IO + 5 unsupervised clusters ( best)
+
+e154c0c5.0f1e.45ff.ae0f.58708a68f270
+
+colnames with 62fb7681.b3f9.4725.bdf6.2eda5ee04cac has celltypes incl Dentric cell S100a4.high
+
+273c9998.c801.4cc8.a5af.7d3786190c13 is unsupervised, no labels
+
+Column names starting with RNA_nbclust and ending with \_clusters are the cell type assignments from InSituType.
+
+\[4\] "RNA_nbclust_505dea9c.f901.4337.965a.d3f312c2867d_1_clusters" \[5\] "RNA_nbclust_505dea9c.f901.4337.965a.d3f312c2867d_1_posterior_probability" \[6\]
+
+"RNA_nbclust_7c39eeda.4bb5.4a69.b6d0.9a43710bfb64_1_clusters" \[7\] \# Dendric S100a4 hi, semisup
+
+"RNA_nbclust_7c39eeda.4bb5.4a69.b6d0.9a43710bfb64_1_posterior_probability" \[8\] "RNA_nbclust_f89a7c0e.a01e.4e44.9bbc.67ffbba70793_1_clusters" \[9\] \# Supervised
+
+"RNA_nbclust_f89a7c0e.a01e.4e44.9bbc.67ffbba70793_1_posterior_probability" \[10\]
+
+"RNA_nbclust_e3def5ab.413a.4c02.b683.f76ba4202d63_1_clusters" \[11\] \# Semi + 5
+
+"RNA_nbclust_e3def5ab.413a.4c02.b683.f76ba4202d63_1_posterior_probability" \[12\] "RNA_nbclust_853a9cfe.66b9.4d5b.895c.daee922bc6a6_1_clusters" \[13\] \# Dendritic S100a4 + to i
+
+"RNA_nbclust_853a9cfe.66b9.4d5b.895c.daee922bc6a6_1_posterior_probability" \[14\] "RNA_nbclust_0fd218a9.2846.44fe.8b33.4198048004ab_1_clusters" \[15\] \# Mouse Brain "RNA_nbclust_0fd218a9.2846.44fe.8b33.4198048004ab_1_posterior_probability"
+
 ```{r celltypes}
-df_cell_types <- sobj_spleen_even@meta.data %>%
+df_cell_types <- sobj_spleen5@meta.data %>%
    dplyr::select ("cell", "Sample.ID", 
                   "RNA_nbclust_e3def5ab.413a.4c02.b683.f76ba4202d63_1_clusters",
-                  #"RNA_nbclust_853a9cfe.66b9.4d5b.895c.daee922bc6a6_1_clusters",
+                  # semisupervised plus 10 
+                  "RNA_nbclust_f89a7c0e.a01e.4e44.9bbc.67ffbba70793_1_clusters",
+                  # "RNA_nbclust_853a9cfe.66b9.4d5b.895c.daee922bc6a6_1_clusters",
                   "spatialclust_4786da16.29dc.44c6.ad08.97cef88cc2ee_1_assignments"
             )
   # group_by(Sample.ID, RNA_nbclust_853a9cfe.66b9.4d5b.895c.daee922bc6a6_1_clusters
   #         ) %>%
   # summarise(count = n(), .groups = "drop")
 head(df_cell_types)
-colnames(df_cell_types) <- c("cell", "Sample.ID", "CellType", "Niche")
+colnames(df_cell_types) <- c("cell", "Sample.ID", "CellType", "CellType_sup", "Niche")
 
 # Assign "a" to "Macrophges" 
 df_cell_types$CellType <- ifelse(df_cell_types$CellType == "c", "Macrophage", df_cell_types$CellType)
 
-table(df_cell_types$CellType)
+table(df_cell_types$CellType_sup)
 head(df_cell_types)
+
+
 ```
 
-Senescence vs Proliferation: Different cells
+```{r celltype}
+sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_cell_types[c('CellType', 'CellType_sup')])
 
-Make a dataframe of the summary counts by sample
+```
+
+### CellType-Marker Counts
+
+Downstream of Celltyping, write raw data for CellType, marker combinations by fov
+
+Leveraging our sample dataframe(s) of cell/gene matrices, re-aggregate for Dendritic.cell (celltype from Supervised InSituType) and gene: Cxcl13. and Neutrophil celltype with Ccl5.
+
+```{r celltype2 }
+#| echo: false
+
+# Summarize the counts matrix by fov by cell type
+head(df_30)
+
+# extract fov from cell id
+df_30$fov <- sapply(df_30$cell, parse_third_token)
+# add cell types 
+head(df_cell_types)
+df_ct30 <- merge(df_30, df_cell_types, by="cell")
+
+cell_type <- 'Neutrophil'
+marker_name <- 'Ccl5'
+sample_id <- 32
+#df_ct <- df_ct32
+
+
+df_30$fov <- sapply(df_30$cell, parse_third_token)
+df_ct30 <- merge(df_30, df_cell_types, by="cell")
+colnames(df_ct30)[1000:1020]
+df_30_ct_neut <- get_pct_fov_celltype(df_ct30, 30, 'Neutrophil', 'Ccl5')
+df_30_ct_dc <- get_pct_fov_celltype(df_ct30, 30, 'Dendritic.cell', 'Cxcl13')
+df_30_ct_neut
+df_30_ct_dc
+
+df_30_ct_test <- get_pct_fov_celltype(df_ct30, 30, 'Dendritic.cell', 'Ccl5')
+df_30_ct_test
+
+# Repeat for each Sample ID
+# merge first
+df_31$fov <- sapply(df_31$cell, parse_third_token)
+df_ct31 <- merge(df_31, df_cell_types, by="cell")
+
+df_31_ct_neut <- get_pct_fov_celltype(df_ct31, 31, 'Neutrophil', 'Ccl5')
+df_31_ct_dc <- get_pct_fov_celltype(df_ct31, 31, 'Dendritic.cell', 'Cxcl13')
+
+df_32$fov <- sapply(df_32$cell, parse_third_token)
+df_ct32 <- merge(df_32, df_cell_types, by="cell")
+df_32_ct_neut <- get_pct_fov_celltype(df_ct32, 32, 'Neutrophil', 'Ccl5')
+df_32_ct_dc <- get_pct_fov_celltype(df_ct32, 32, 'Dendritic.cell', 'Cxcl13')
+
+df_34$fov <- sapply(df_34$cell, parse_third_token)
+df_ct34 <- merge(df_34, df_cell_types, by="cell")
+df_34_ct_neut <- get_pct_fov_celltype(df_ct34, 34, 'Neutrophil', 'Ccl5')
+df_34_ct_dc <- get_pct_fov_celltype(df_ct34, 34, 'Dendritic.cell', 'Cxcl13')
+
+df_35$fov <- sapply(df_35$cell, parse_third_token)
+df_ct35 <- merge(df_35, df_cell_types, by="cell")
+df_35_ct_neut <- get_pct_fov_celltype(df_ct35, 35, 'Neutrophil', 'Ccl5')
+df_35_ct_dc <- get_pct_fov_celltype(df_ct35, 35, 'Dendritic.cell', 'Cxcl13')
+df_35_ct_neut
+df_35_ct_dc
+
+```
+
+Compile the Sample stats on our gene and celltype of interest. Dendritic.cell with Cxcl13 and Neutrophils with Ccl5
+
+```{r mergethis}
+#| echo: false
+#| message: false
+#| warning:false
+df_genes_by_dc_by_fov <- rbind(df_30_ct_dc, df_31_ct_dc, df_32_ct_dc, df_34_ct_dc, df_35_ct_dc)
+df_genes_by_neut_by_fov <- rbind(df_30_ct_neut, df_31_ct_neut, df_32_ct_neut, df_34_ct_neut, df_35_ct_neut)
+
+write.csv(df_genes_by_dc_by_fov, paste0(results_dir, "/cxcl13_dcs_byfov.csv"))
+write.csv(df_genes_by_neut_by_fov, paste0(results_dir, "/ccl5_neut_byfov.csv"))
+
+```
+
+Overall Sample Summaries for DCs (Cxcl13) and Neutrophils (Ccl5)
+
+```{r DC_Neut_Summary}
+#| echo: false
+
+df_ct30_sample_dc <- get_sample_pcts_bycelltype(df_ct30, 30, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct31_sample_dc <- get_sample_pcts_bycelltype(df_ct31, 31, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct32_sample_dc <- get_sample_pcts_bycelltype(df_ct32, 32, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct34_sample_dc <- get_sample_pcts_bycelltype(df_ct34, 34, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct35_sample_dc <- get_sample_pcts_bycelltype(df_ct35, 35, celltype='Dendritic.cell', marker='Cxcl13')
+
+df_ct30_sample_neut <- get_sample_pcts_bycelltype(df_ct30, 30, celltype='Neutrophil', marker='Ccl5')
+df_ct31_sample_neut <- get_sample_pcts_bycelltype(df_ct31, 31, celltype='Neutrophil', marker='Ccl5')
+df_ct32_sample_neut <- get_sample_pcts_bycelltype(df_ct32, 32, celltype='Neutrophil', marker='Ccl5')
+df_ct34_sample_neut <- get_sample_pcts_bycelltype(df_ct34, 34, celltype='Neutrophil', marker='Ccl5')
+df_ct35_sample_neut <- get_sample_pcts_bycelltype(df_ct35, 35, celltype='Neutrophil', marker='Ccl5')
+
+
+# rbind
+df_dc_by_sample <- rbind(df_ct30_sample_dc, df_ct31_sample_dc, df_ct32_sample_dc, df_ct34_sample_dc, df_ct35_sample_dc)
+df_neut_by_sample <- rbind(df_ct30_sample_neut,df_ct31_sample_neut,df_ct32_sample_neut,df_ct34_sample_neut,df_ct35_sample_neut)
+
+write.csv(df_dc_by_sample, paste0(results_dir, "/Dendritic_by_sample.csv"))
+write.csv(df_neut_by_sample, paste0(results_dir, "/Neutrophils_by_fov.csv"))
+
+```
+
+## PCA and UMAP
+
+### PCA
+
+```{r pca}
+#| echo: false
+#| message: false
+#| warning:false
+#| 
+sobj_spleen5 <- FindVariableFeatures(object = sobj_spleen5) 
+   # , mean.function = ExpMean, dispersion.function = LogVMR, 
+   # x.low.cutoff = 0.0125, x.high.cutoff = 3, y.cutoff = 0.5)
+
+#length(x = sobj_spleen@var.features)
+
+sobj_spleen5 <- ScaleData(sobj_spleen5)
+#sobj_spleen5 <- RunPCA(sobj_spleen5, verbose = FALSE, npcs = 50)
+
+# Assess how PCA did with different npcs, 20, 30, 50 e.g. 
+# ElbowPlot to decide best cutoff.  DimPlot colored by possible batch effect variables. e.g. slides should look integrated.
+sobj_spleen5 <- RunPCA(sobj_spleen5, verbose = FALSE, npcs = 30)
+ElbowPlot(sobj_spleen5)
+
+
+```
+
+```{r pcaplots}
+#| echo: false
+
+# PCA plot
+#Idents(sobj_spleen5) <- "Sample.ID"
+features <- TopFeatures(sobj_spleen5, nfeautures=30)
+sobj_spleen5.no.umap <- sobj_spleen5
+sobj_spleen5.no.umap[["umap"]] <- NULL
+DimPlot(sobj_spleen5.no.umap) + RotatedAxis()
+
+
+```
+
+### DotPlot of Supervised InsituType CellTypes
+
+```{r CellTypesup}
+#| echo: false
+
+Idents(sobj_spleen5) <- "CellType_sup"
+
+df_markers <- FindAllMarkers(sobj_spleen5,nfeatures=5 )
+head(df_markers)
+
+# reduce to highest FC genes
+top_genes <- df_markers %>%
+      dplyr::top_n(40, wt = abs(avg_log2FC))
+      #dplyr::select(1:10)
+
+print(top_genes$gene)
+
+
+p <- DotPlot(sobj_spleen5, features = top_genes$gene) + RotatedAxis()
+p
+ggsave(paste0(results_dir, "/DotPlot_CellType_sup1.png"), p, width=12)
+```
+
+### Heatmap PCA
+
+```{r umap}
+
+Idents(sobj_spleen5) <- "Genotype"
+table(Idents(sobj_spleen5))
+DoHeatmap(sobj_spleen5,
+          #group.by = "ident",
+          features=TopFeatures(sobj_spleen5, dim=1, nfeatures=30),
+          )
+
+# PCHeatmap(object = sobj_spleen, pc.use = 1, cells.use = 500, do.balanced = TRUE, label.columns = FALSE)
+# PCHeatmap(object = sobj_spleen, pc.use = 1:12, cells.use = 500, do.balanced = TRUE, 
+#     label.columns = FALSE, use.full = FALSE)
+```
+
+### Umap
+
+```{r UMAP}
+set.seed(24)
+sobj_spleen5 <- FindNeighbors(sobj_spleen5, dims = 1:30)
+sobj_spleen5 <- FindClusters(sobj_spleen5,  cluster.name='seurat_cluster.6', resolution=0.6, verbose = TRUE)
+#sobj <- RunUMAP(sobj, min_dist=0.3, spread=5, dims = 1:20)
+sobj_spleen5 <- RunUMAP(sobj_spleen5, dims = 1:20, spread=5, min_dist = 0.1, n_neighbors=10) # from 0.1, 30, was 20
+
+
+# cell cluster assignments are kept here 
+#table(Idents(sobj_spleen))
+# This is where metadata is placed for clusters, independent of FindClusters cluster.name
+table(sobj_spleen5@meta.data$seurat_clusters)
+
+```
+
+Show UMAP with Seurat clusters
+
+```{r umap1}
+
+Idents(sobj_spleen5) <- "CellType_Label6"
+DimPlot(sobj_spleen5, reduction = "umap",  alpha=0.5, cols='polychrome') + 
+  ggtitle("Seurat Louvain clusters6")
+
+ggsave(paste0(results_dir, "/Umap_Louvain6.png"), last_plot(), dpi=300)
+```
+
+### Rename
+
+```{r rename }
+# Cluster renames
+# Rename the cluster
+df_meta <- sobj_spleen5@meta.data[c('cell', 'seurat_clusters')]
+df_meta$seurat_clusters.6 <- df_meta$seurat_clusters
+head(df_meta)
+
+df_meta <- df_meta %>%
+  mutate(CellType_Label6 = case_when(
+    seurat_clusters.6 == 0 ~ "Unknown.35",
+    seurat_clusters.6  == 1 ~ "B.cell",
+    seurat_clusters.6  == 2 ~ "Erythroid.Projenitor",
+    seurat_clusters.6 == 3 ~ "T.cell",
+    seurat_clusters.6  == 4 ~ "B.cell",
+    seurat_clusters.6  == 5 ~ "Unknown.34",
+    seurat_clusters.6 == 6 ~ "B.cell.like",
+    seurat_clusters.6  == 7 ~ "Unknown.7",
+    seurat_clusters.6  == 8 ~ "Macrophage/Monocytes",
+    seurat_clusters.6 == 9 ~ "Unknown.9",
+    seurat_clusters.6  == 10 ~ "Neutrophils",
+    seurat_clusters.6  == 11 ~ "Plasma",
+    seurat_clusters.6 == 12 ~ "Dendritic.cell",
+    seurat_clusters.6  == 13 ~ "Macrophage",
+    seurat_clusters.6  == 14 ~ "Unknown.14",
+    seurat_clusters.6  == 15 ~ "Dendritic.cell",
+    seurat_clusters.6  == 16 ~ "B.cell",
+    TRUE ~ "other" # Optional: handle unexpected values
+  ))
+
+sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_meta[c('seurat_clusters.6','CellType_Label6')])
+
+Idents(sobj_spleen5) <- 'seurat_cluster.6'
+```
+
+DotPlot Setup
+
+```{r gene_annots}
+
+genes_cosMx_celltyping <- get_nanostring_celltyping_genes(ns_gene_fn)
+cat("Nanostring lists", length(genes_cosMx_celltyping), "genes for celltyping" )
+
+get_top_markers <- function(cluster, n) {
+  # depends on Idents being set correctly 
+  markers <- FindMarkers(sobj_spleen5, ident.1 = cluster)
+  markers %>%
+    rownames_to_column(var = "gene") %>% # Add gene names as a column
+    top_n(n, wt = abs(avg_log2FC)) %>%  # Select top 10 markers by absolute log2 fold change
+    mutate(cluster = cluster)            # Add cluster information
+}
+
+```
+
+### DotPlot Unsupervised Clusters
+
+```{r seuratDotPlot}
+
+# Function to find top n markers for a specific cluster
+clusters <- unique(sobj_spleen5@meta.data$seurat_clusters)
+
+# Apply the function to all clusters and combine results
+Idents(sobj_spleen5) <- 'seurat_clusters'
+top_markers <- map_dfr(clusters, get_top_markers, 15)
+
+table(top_markers$cluster)
+dim(top_markers) # num clusters * n
+head(top_markers)
+# also append our favorite cell typing markers
+
+genes_lineage <- c("Cd19", "Ptprc", "Cd8a", "Cd8b1", "Cd68", "Cd163","Itgax", "Itgam", "Cd3e", "Cd3d", "Fn1", "Acta2")
+
+# Compare DotPlots with top_markers limited by only ns celltyping genes, but
+# augmented with classic cell typing genes for comparison
+# remove any genes where the rowsum is too low unless its a lineage marker, try to keep with lower barriers. 
+markers_to_plot <- top_markers %>%
+    dplyr::filter ((gene %in% genes_cosMx_celltyping & (pct.1 + pct.2) > 0.1 
+                   & p_val_adj < 0.05) | gene %in% genes_lineage)
+
+dim(markers_to_plot) # 72 is somewhat reasonable; w repeats is really 36 unique genes
+
+DotPlot(sobj_spleen5, features = unique(markers_to_plot$gene)) + RotatedAxis() +
+  theme_minimal() + # Change to a minimal (white) background
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+    axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+    panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+    plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+    #panel.grid = element_blank() # Optional: remove grid lines if needed
+  ) +
+  ggtitle("Seurat Unsupervised Umap clusters Res6 top Log2FC")
+
+ggsave(paste0(results_dir, "/Clusters_unsup6_DotPlot.png"), last_plot(), width = 12)
+
+
+head(markers_to_plot$gene)
+#get annotations
+df_celltype_markers <- df_gene_data2 %>%
+  filter(Display_Name %in% markers_to_plot$gene)
+#write.csv( df_celltype_markers, paste0(results_dir, "/cell_typing_markers.csv"))
+```
+
+```{r umapsample}
+
+Idents(sobj_spleen5) <- "Sample.ID"
+DimPlot(sobj_spleen5, reduction = "umap", alpha=0.5, cols='polychrome')
+
+ggsave(paste0(results_dir, "/CellTypes_SampleID_Umap.png"), last_plot())
+```
+
+Show UMAP with Cell Type (InsituType + 5 unsup clusters)
+
+```{r UMAP2}
+
+# sobj_spleen5 <- FindNeighbors(sobj_spleen5, dims = 1:30)
+# sobj_spleen5 <- FindClusters(sobj_spleen5,  cluster.name='seurat_cluster.4', resolution=0.4, verbose = FALSE)
+#sobj <- RunUMAP(sobj, min_dist=0.3, spread=5, dims = 1:20)
+#sobj_spleen5 <- RunUMAP(sobj_spleen5, dims = 1:20, spread=5, min_dist = 0.1, n_neighbors=20) # from 0.1, 30
+
+Idents(sobj_spleen5) <- "CellType"
+DimPlot(sobj_spleen5, reduction = "umap", alpha=0.5, cols='polychrome')
+
+ggsave(paste0(results_dir, "/CellTypes_SemiSup_Umap.png"), last_plot())
+```
+
+```{r semisupDot}
+
+# Function to find top n markers for a specific cluster
+clusters <- unique(sobj_spleen5@meta.data$CellType)
+
+# Apply the function to all clusters and combine results
+Idents(sobj_spleen5) <- 'CellType'
+top_markers <- map_dfr(clusters, get_top_markers, 15)
+
+table(top_markers$cluster)
+dim(top_markers) # num clusters * n
+head(top_markers)
+# also append our favorite cell typing markers
+
+genes_lineage <- c("Cd19", "Ptprc", "Cd8a", "Cd8b1", "Cd68", "Cd163","Itgax", "Itgam", "Cd3e", "Cd3d", "Fn1", "Acta2")
+
+# Compare DotPlots with top_markers limited by only ns celltyping genes, but
+# augmented with classic cell typing genes for comparison
+# remove any genes where the rowsum is too low unless its a lineage marker, try to keep with lower barriers. 
+markers_to_plot <- top_markers %>%
+    dplyr::filter ((gene %in% genes_cosMx_celltyping & (pct.1 + pct.2) > 0.1 
+                   & p_val_adj < 0.05) | gene %in% genes_lineage)
+
+dim(markers_to_plot) # 72 is somewhat reasonable; w repeats is really 36 unique genes
+
+DotPlot(sobj_spleen5, features = unique(markers_to_plot$gene)) + RotatedAxis() +
+  theme_minimal() + # Change to a minimal (white) background
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+    axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+    panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+    plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+    #panel.grid = element_blank() # Optional: remove grid lines if needed
+  ) +
+  ggtitle("CellType SemiSup5 DotPlot top Log2FC")
+
+ggsave(paste0(results_dir, "/CellTypes_semisup5_DotPlot.png"), last_plot(), width = 12)
+
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+```
+
+### DotPlot
+
+```{r dotplot1}
+
+table(Idents(sobj_spleen5))
+clusters <- unique(Idents(sobj_spleen5))
+
+#genes_cosMx_celltyping <- get_nanostring_celltyping_genes(ns_gene_fn)
+
+#cluster = "NK.cell"
+#markersNK <- FindMarkers(sobj_spleen5, ident.1 = cluster)
+#dim(markersNK)
+#markersNK <- markersNK %>%
+#  dplyr::top_n(10, wt = abs(avg_log2FC))
+
+# Function to find top n markers for a specific cluster
+n <- 15
+
+# Apply the function to all clusters and combine results
+top_markers <- map_dfr(clusters, get_top_markers, 15)
+
+table(top_markers$cluster)
+dim(top_markers) # 150 -> 91. 
+head(top_markers)
+# also append our favorite cell typing markers
+
+genes_lineage <- c("Cd19", "Ptprc", "Cd8a", "Cd8b1", "Cd68", "Cd163","Itgax", "Itgam", "Cd3e", "Cd3d", "Fn1", "Acta2")
+
+# Compare DotPlots with top_markers limited by only ns celltyping genes, but
+# augmented with classic cell typing genes for comparison
+# remove any genes where the rowsum is too low unless its a lineage marker, try to keep with lower barriers. 
+markers_to_plot <- top_markers %>%
+    dplyr::filter ((gene %in% genes_cosMx_celltyping & (pct.1 + pct.2) > 0.1 
+                   & p_val_adj < 0.05) | gene %in% genes_lineage)
+
+dim(markers_to_plot) # 72 is somewhat reasonable; w repeats is really 36 unique genes
+
+DotPlot(sobj_spleen5, features = unique(markers_to_plot$gene)) + RotatedAxis() +
+  theme_minimal() + # Change to a minimal (white) background
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+    axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+    panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+    plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+    #panel.grid = element_blank() # Optional: remove grid lines if needed
+  ) +
+  ggtitle("Supervised InSituType Cell types top Log2FC")
+
+ggsave(paste0(results_dir, "/CellType_sup_DotPlot.png"), last_plot(), width = 12)
+```
+
+## SubCluster
+
+T.cells may be able to be clustered further.
+
+```{r subcluster}
+#| echo: false
+#| warning: false
+
+# Step 1: Subset Seurat object for cluster 4
+Idents(sobj_spleen5) <- "seurat_cluster.5"
+table(Idents(sobj_spleen5))
+cluster_4_cells <- subset(sobj_spleen5, subset = seurat_cluster.5 == 4) # Replace '4' with the cluster number for T cells
+dim(cluster_4_cells)
+
+# Step 2: Re-normalize and prepare the subsetted data
+cluster_4_cells <- cluster_4_cells %>%
+  NormalizeData() %>%
+  FindVariableFeatures() %>%
+  ScaleData() %>%
+  RunPCA()
+
+# Step 3: Clustering and dimensionality reduction
+cluster_4_cells <- cluster_4_cells %>%
+  FindNeighbors(dims = 1:10) %>%
+  FindClusters(resolution = 0.3) %>% # Adjust resolution for desired granularity
+  RunUMAP(dims = 1:10)
+
+# Step 4: Visualize UMAP of subclusters
+DimPlot(cluster_4_cells, reduction = "umap", label = TRUE) + ggtitle("Subclusters of Cluster 4")
+
+# Step 5: Add subcluster information back to the original Seurat object
+sobj_spleen5$Tcell_subcluster <- NA
+sobj_spleen5$Tcell_subcluster[Cells(cluster_4_cells)] <- Idents(cluster_4_cells)
+
+```
+
+```{r tcelldot}
+
+# T.cell subset dot plot
+table(Idents(cluster_4_cells))
+# same as?
+table(cluster_4_cells@meta.data$seurat_clusters)
+clusters <- unique(Idents(cluster_4_cells))
+
+#genes_cosMx_celltyping <- get_nanostring_celltyping_genes(ns_gene_fn)
+
+# Function to find top n markers for a specific cluster
+n <- 15
+
+# Apply the function to all clusters and combine results
+top_markers <- map_dfr(clusters, get_top_markers, 15)
+
+table(top_markers$cluster)
+dim(top_markers) # 150 -> 91. 
+head(top_markers)
+# also append our favorite cell typing markers
+
+genes_lineage <- c("Cd19", "Ptprc", "Cd8a", "Cd8b1", "Cd68", "Foxp3","Cd163","Itgax", "Itgam", "Cd3e", "Cd3d", "Fn1", "Acta2")
+
+# Compare DotPlots with top_markers limited by only ns celltyping genes, but
+# augmented with classic cell typing genes for comparison
+# remove any genes where the rowsum is too low unless its a lineage marker, try to keep with lower barriers. 
+markers_to_plot <- top_markers %>%
+    dplyr::filter ((gene %in% genes_cosMx_celltyping & (pct.1 + pct.2) > 0.1 
+                   & p_val_adj < 0.05) | gene %in% genes_lineage)
+
+dim(markers_to_plot) # 72 is somewhat reasonable; w repeats is really 36 unique genes
+
+DotPlot(cluster_4_cells, features = unique(markers_to_plot$gene)) + RotatedAxis() +
+  theme_minimal() + # Change to a minimal (white) background
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+    axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+    panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+    plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+    #panel.grid = element_blank() # Optional: remove grid lines if needed
+  ) +
+  ggtitle("TCell types top Log2FC")
+
+ggsave(paste0(results_dir, "/Tcells_DotPlot.png"), last_plot(), width = 12)
+
+```
+
+### Cluster Labels
+
+```{r nameclusters}
+
+# Add a metadata column for the labels from unsupervised clustering
+# bonus to have T cells and NK cells.
+
+df_meta <- sobj_spleen5@meta.data
+df_meta <- df_meta %>%
+  mutate(CellType_Label = case_when(
+    seurat_cluster.5 == 0 ~ "NK", # might be NK. 
+    seurat_cluster.5  == 1 ~ "B.cell",
+    seurat_cluster.5  == 2 ~ "Erythroid.Projenitor",
+    seurat_cluster.5 == 3 ~ "Stressed.unknown",
+    seurat_cluster.5  == 4 ~ "T.cell",
+    seurat_cluster.5  == 5 ~ "Unknown.a",
+    seurat_cluster.5 == 6 ~ "Unknown.b",
+    seurat_cluster.5  == 7 ~ "Neutrophil",
+    seurat_cluster.5  == 8 ~ "Macrophage",
+    seurat_cluster.5 == 9 ~ "Dendritic.cell",
+    seurat_cluster.5  == 10 ~ "Plasma",
+    seurat_cluster.5  == 11 ~ "Monocytes",
+    seurat_cluster.5 == 12 ~ "Macrophage",
+    seurat_cluster.5  == 13 ~ "Fibroblast",
+    seurat_cluster.5  == 14 ~ "B.cell",
+    TRUE ~ "other" # Optional: handle unexpected values
+  ))
+
+sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_meta[c('CellType_Label')])
+
+
+
+```
+
+### Waterfall Plot
+
+For interesting Cell Typing genes, show the gene annotations we have
+
+```{r waterfall}
+
+length(unique(markers_to_plot$gene))
+
+library(SeuratExtend)
+Idents(sobj_spleen5) <- "CellType_sup"
+SeuratExtend::DimPlot2(sobj_spleen5)
+
+Idents(sobj_spleen5) <- "CellType"
+SeuratExtend::DimPlot2(sobj_spleen5) + 
+  ggtitle ("Semisupervised InsituType")
+
+Idents(sobj_spleen5) <- "seurat_clusters"
+SeuratExtend::DimPlot2(sobj_spleen5)
+```
+
+```{r celldist}
+# Cluster distribution bar plot
+#ClusterDistrBar(sobj_spleen5$orig.ident, sobj_spleen5$seurat_cluster.5)
+
+# how to group 
+SeuratExtend::ClusterDistrBar(sobj_spleen5$orig.ident, sobj_spleen5$CellType_sup)
+
+# WT Samples only
+# how to group 
+SeuratExtend::ClusterDistrBar(sobj_spleen30$orig.ident, sobj_spleen30$CellType_sup)
+SeuratExtend::ClusterDistrBar(sobj_spleen30$orig.ident, sobj_spleen30$CellType_Label)
+```
+
+```{r}
+SeuratExtend::ClusterDistrBar(sobj_spleen30$orig.ident, sobj_spleen32$CellType_Label)
+
+```
+
+```{r MarkerAnalysis}
+
+# Calculating z-scores for variable features
+genes.zscore <- CalcStats(
+  sobj_spleen5,
+  features = VariableFeatures(sobj_spleen5),
+  group.by = "CellType_sup",
+  order = "p",
+  n = 4)
+  
+# Displaying heatmap
+SeuratExtend::Heatmap(genes.zscore, lab_fill = "zscore")
+
+```
+
+```{r heat2}
+
+options(spe = "mouse")
+sobj_spleen5 <- SeuratExtend::GeneSetAnalysisGO(sobj_spleen5, parent = "immune_system_process", n.min = 5)
+matr <- SeuratExtend::RenameGO(sobj_spleen5@misc$AUCell$GO$immune_system_process)
+go_zscore <- CalcStats(
+  matr,
+  f = sobj_spleen5$CellType_sup,
+  order = "p",
+  n = 3)
+
+SeuratExtend::Heatmap(go_zscore, lab_fill = "zscore")
+
+matr
+```
+
+```{r}
+
+Assays(sobj_spleen5)
+#DefaultAssay(sobj_spleen5) <- "TF"
+WaterfallPlot(
+  sobj_spleen5,
+  features = markers_to_plot, #  rownames(sobj_spleen5),
+  ident.1 = "B.Cells",
+  ident.2 = "Monocytes",
+  exp.transform = FALSE,
+  top.n = 10)
+
+
+
+```
+
+### FeaturePlots
+
+```{r MultFeatures}
+
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Lmna", feature.2 = "Mki67", feature.3 = "Cd19")
+
+
+```
+
+```{r featuregrid}
+
+
+print ('hi')
+
+
+```
+
+```{r separateUmaps}
+
+run_pca_stuff <- function(sobj) {
+  sobj <- FindVariableFeatures(object = sobj) 
+  sobj <- ScaleData(sobj)
+  sobj <- RunPCA(sobj, verbose = FALSE, npcs = 30)
+
+  sobj <- FindNeighbors(sobj, dims = 1:30)
+  sobj <- FindClusters(sobj,  cluster.name='seurat_cluster.4', resolution=0.4, verbose = FALSE)
+  sobj <- RunUMAP(sobj, dims = 1:20, spread=5, min_dist = 0.1, n_neighbors=20) # from 0.1, 30
+
+  return(sobj)
+}
+
+sobj_spleen30 <- run_pca_stuff(sobj_spleen30)
+sobj_spleen31 <- run_pca_stuff(sobj_spleen31)
+sobj_spleen32 <- run_pca_stuff(sobj_spleen32)
+sobj_spleen34 <- run_pca_stuff(sobj_spleen34)
+sobj_spleen35 <- run_pca_stuff(sobj_spleen35)
+
+
+```
+
+```{r eachumap}
+
+# Unlabled
+
+DimPlot(sobj_spleen30, reduction = "umap", alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen35, reduction = "umap", alpha=0.5, cols='polychrome')
+
+```
+
+```{r eachumap2}
+
+# Project each CellType 
+Idents(sobj_spleen30) <- "CellType_sup"
+DimPlot(sobj_spleen30, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen31) <- "CellType_sup"
+DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen32) <- "CellType_sup"
+DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen34) <- "CellType_sup"
+DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen35) <- "CellType_sup"
+DimPlot(sobj_spleen35, reduction = "umap", alpha=0.5, cols='polychrome')
+```
+
+```{r}
+Idents(sobj_spleen30) <- "CellType"
+DimPlot(sobj_spleen30, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen31) <- "CellType"
+DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen32) <- "CellType"
+DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen34) <- "CellType"
+DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen35) <- "CellType"
+DimPlot(sobj_spleen35, reduction = "umap", alpha=0.5, cols='polychrome')
+```
+
+```{r}
+# Project each CellType 
+Idents(sobj_spleen30) <- "CellType_Label"
+DimPlot(sobj_spleen30, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen31) <- "CellType_Label"
+DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen32) <- "CellType_Label"
+DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen34) <- "CellType_Label"
+DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen35) <- "CellType_Label"
+DimPlot(sobj_spleen35, reduction = "umap", alpha=0.5, cols='polychrome')
+```
+
+FindMarkers for the whole spleen clusters first. Then by Sample.
+
+```{r findmarkers}
+
+which_cluster <- "seurat_cluster.5"
+
+Idents(sobj_spleen5) <- which_cluster
+table(Idents(sobj_spleen5))
+num_clusters <- length(unique(Idents(sobj_spleen5)))
+spleen_markers <- FindAllMarkers(sobj_spleen5)
+# keep only top <something> for each cluster
+
+spleen_markers <- spleen_markers %>%
+      mutate(HighFoldChangeLowPval = ifelse(p_val_adj < 0.05 & abs(avg_log2FC) > 1.0, "Y", "N")) %>%
+      mutate(abs_logFC = abs(avg_log2FC))
+    
+top_markers_list <- list()
+for (cluster_num in 0:num_clusters) {
+    print(cluster_num)
+    spleen_markers_cluster <- spleen_markers %>% 
+      filter(cluster == cluster_num) %>%
+      filter(HighFoldChangeLowPval == "Y")
+    head(spleen_markers_cluster)
+    top_markers_list[[cluster_num + 1]] <- spleen_markers_cluster
+}
+names(top_markers_list) <- 0:num_clusters
+
+```
+
+```{r}
+top_markers_list[1]
+
+```
+
+############################ Excel wb of EnrichedGenes by cluster
+
+```{r findmarkers}
+
+wb <- createWorkbook()
+
+df_list <- list()
+for (cluster_num in 0:num_clusters) {
+  
+  df_list[cluster_num + 1] <- top_markers_list[cluster_num + 1]
+
+}
+names(df_list) <- paste("Cluster", 0:num_clusters)
+
+# Write each dataframe to a separate sheet
+for (name in names(df_list)) {
+  addWorksheet(wb, name)                 # Add a new sheet named after the dataframe
+  writeData(wb, sheet = name, df_list[[name]])  # Write the dataframe to the sheet
+  # Set freeze panes (e.g., freeze the first row and column)
+  freezePane(wb, sheet = name, firstRow = TRUE, firstCol = TRUE)
+}
+
+# Save the workbook
+saveWorkbook(wb, file = paste0(results_dir, "/SpleenCluster5_DEGs.xlsx"), overwrite = TRUE)
+
+
+```
+
+```{r UMAPwClusters}
+
+# sobj_spleen5 <- FindNeighbors(sobj_spleen5, dims = 1:30)
+# sobj_spleen5 <- FindClusters(sobj_spleen5,  cluster.name='seurat_cluster.4', resolution=0.4, verbose = FALSE)
+#sobj <- RunUMAP(sobj, min_dist=0.3, spread=5, dims = 1:20)
+sobj_spleen5 <- RunUMAP(sobj_spleen5, dims = 1:20, spread=5, min_dist = 0.1, n_neighbors=40, reduction.name = "umap_cluster5") # from 0.1, 30
+
+Idents(sobj_spleen5) <- "seurat_cluster.5"
+DimPlot(sobj_spleen5, reduction = "umap_cluster5", alpha=0.5, cols='polychrome')
+```
+
+DotPlot for SeuratClusters
+
+```{r dotplot2}
+
+Idents(sobj_spleen5) <- "seurat_clusters.5"
+table(Idents(sobj_spleen5))
+clusters <- unique(Idents(sobj_spleen5))
+
+#genes_cosMx_celltyping <- get_nanostring_celltyping_genes(ns_gene_fn)
+
+#cluster = "NK.cell"
+#markersNK <- FindMarkers(sobj_spleen5, ident.1 = cluster)
+#dim(markersNK)
+#markersNK <- markersNK %>%
+#  dplyr::top_n(10, wt = abs(avg_log2FC))
+
+# Function to find top n markers for a specific cluster
+n <- 15
+get_top_markers <- function(cluster) {
+  markers <- FindMarkers(sobj_spleen5, ident.1 = cluster)
+  markers %>%
+    rownames_to_column(var = "gene") %>% # Add gene names as a column
+    top_n(n, wt = abs(avg_log2FC)) %>%  # Select top 10 markers by absolute log2 fold change
+    mutate(cluster = cluster)            # Add cluster information
+}
+
+# Apply the function to all clusters and combine results
+top_markers <- map_dfr(clusters, get_top_markers)
+
+table(top_markers$cluster)
+dim(top_markers) # 150 -> 91. 
+head(top_markers)
+# also append our favorite cell typing markers
+
+genes_lineage <- c("Cd19", "Ptprc", "Cd8a", "Cd8b1", "Cd68", "Cd163","Itgax", "Itgam", "Cd3e", "Cd3d", "Fn1", "Acta2")
+
+# Compare DotPlots with top_markers limited by only ns celltyping genes, but
+# augmented with classic cell typing genes for comparison
+# remove any genes where the rowsum is too low unless its a lineage marker, try to keep with lower barriers. 
+markers_to_plot <- top_markers %>%
+    dplyr::filter ((gene %in% genes_cosMx_celltyping & (pct.1 + pct.2) > 0.1 
+                   & p_val_adj < 0.05) | gene %in% genes_lineage)
+
+dim(markers_to_plot) # 72 is somewhat reasonable; w repeats is really 36 unique genes
+
+DotPlot(sobj_spleen5, features = unique(markers_to_plot$gene)) + RotatedAxis() +
+  theme_minimal() + # Change to a minimal (white) background
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+    axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+    panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+    plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+    #panel.grid = element_blank() # Optional: remove grid lines if needed
+  ) +
+  ggtitle("Supervised InSituType Cell types top Log2FC")
+
+ggsave(paste0(results_dir, "/CellType_sup_DotPlot.png"), last_plot(), width = 12)
+
+```
+
+```{r colors}
+
+# Cell Type palette to be consistent with one of the AtoMx palettes
+celltype_colors <- c("#1b9e77", "#7570b3", "#e7298a", "#66a61e", "#e6ab02",
+                    "#a6761d", "#b3cc1a", "#377eb8", "#f87878",  "#4daf4a",
+                    "#984ea3", "#a65628", "#af648b", "#999999",
+                    "#ff7f00", "#cccccc",
+                    "lightgreen", "turquoise", "lightblue", "lightyellow", "pink")
+
+# CellType / InSituType supervised cell typing types:
+names(celltype_colors) <- c("B.cell", "Dendritic.cell", "Endothelial", 
+                            "Fibroblast", "Macrophage", "Mast.cell",
+                            "Monocyte", "Neutrophil", "NK.cell", "Plasma",
+                            "Plasmablast", "T.cell.CD4", "T.cell.CD8",
+                            "T.cell.Reg", "Plasmacytoid", "unknown", 
+                            "a","b","c","d", "e")
+
+# change to my labels 
+mouseIO_colors <- c("#1b9e77", "#7570b3", "#e7298a", "#66a61e", "#e6ab02",
+                    "#a6761d", "#b3cc1a", "#377eb8", "#f87878",  "#4daf4a", "#984ea3",
+                    "#a65628", "#af648b", "#999999", "#999999",
+                    "#ff7f00", "#ff7f00", "turquoise", "lightblue",
+                    "#cccccc",
+                    "lightgreen", "turquoise", "lightblue", "peachpuff", "pink")
+
+names(mouseIO_colors) <- c("B.cell", "Dendritic.cell", "Endothelial", 
+                            "Fibroblast", "Macrophage", "Mast.cell",
+                            "Monocyte", "Neutrophil", "NK.cell", "Plasma",
+                            "Plasmablast", "T.cell.CD4", "T.cell.CD8",
+                            "T.cell.regulatory", "T.cell.reg",
+                            "Plasmacytoid.dendritic.cell", "pDC",
+                            "Myofibroblast", "Erythroid.projenitor",
+                            "unknown",
+                            "a","b","c","d", "e")
+
+
+# molecule colors #00ffff cyan, #ff0000 red, 
+
+
+```
+
+Feature Plots
+
+```{r}
+
+# Feature Plots
+Idents(sobj_spleen5) <- "CellType_Label"
+ImageDimPlot(sobj_spleen5, fov="fov30", border.size = 0.1,
+             cols = 'polychrome',
+             axes = TRUE,
+             flip_xy = FALSE,
+             coord.fixed=TRUE) 
+
+ImageDimPlot(sobj_spleen5, fov="fov31", border.size = 0.1,
+             cols = 'polychrome',
+             axes = TRUE,
+             flip_xy = FALSE,
+             coord.fixed=TRUE) 
+
+ImageDimPlot(sobj_spleen5, fov="fov32", border.size = 0.1,
+             cols = 'polychrome',
+             axes = TRUE,
+             flip_xy = FALSE,
+             coord.fixed=TRUE) 
+
+ImageDimPlot(sobj_spleen5, fov="fov34", border.size = 0.1,
+             cols = 'polychrome',
+             axes = TRUE,
+             flip_xy = FALSE,
+             coord.fixed=TRUE) 
+```
+
+```{r feature dim plot}
+
+
+ImageDimPlot(sobj_spleen5, fov="fov30", molecules=genes_lineage[1:9],
+             #split.by='ident',
+             #mols.cols='Set2',
+                 coord.fixed=TRUE, mols.size=0.1, alpha=0.5) 
+
+```
+
+```{r}
+
+p <- VlnPlot2(sobj_spleen5, features = genes_lineage, violin=F, pt=FALSE, group.by= "CellType_Label", ncol=1)
+p
+```
+
+```{r}
+
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Foxp3", feature.2 = "Cd8a", feature.3 = "Cd4")
+
+# Try to confirm CD4+ 
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Cd4", feature.2 = "Cd28", feature.3 = "Cd68")
+```
+
+```{r featureplot3}
+
+# Neutrophils, overlapping Monocytes
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Itgam", feature.2 = "S100a8", feature.3 = "S100a9") 
+
+
+# Monocytes
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Cd68", feature.2 = "Cd14", feature.3 = "Ccr2") + ggtitle("Monocytes")
+
+#Activated DCs
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Tnf", feature.2 = "Ccl17", feature.3 = "Ccl22") + ggtitle("Activated DCs")
+
+# pDCs
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Itgax", feature.2 = "Gzmb", feature.3 = "Tlr7") + ggtitle ("pDCs")
+
+# Macrophages
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Marco", feature.2 = "Cd68", feature.3 = "Cd163") + ggtitle ("pDCs")
+
+```
+
+```{r}
+
+# CD68+/CD163- could be M1 pro-inflammatory?  No, not colocated 
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Cd68", feature.2 = "Il1b", feature.3 = "Ccr7") + ggtitle ("M1")
+
+# CD68+/CD163- could be Monocytes # No. 
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Cd14", feature.2 = "Cd68", feature.3 = "Ccr2") + ggtitle ("Monocytes")
+
+# CD68+/CD163- could be DCs?
+SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Itgax", feature.2 = "Cd68", feature.3 = "Cd86") + ggtitle ("DCs")
+
+
+```
+
+```{r}
+
+ImageDimPlot(sobj_spleen5, fov="fov34", flip_xy=FALSE,
+             molecules = c("Itgax", "Irf4"))
+```
+
+```{r}
+
+mouseprofiles <- read.csv( "/Users/annmstrange/Documents/git/CosMx-Cell-Profiles/Human/IO/IO.profiles.mouse2.csv", 
+                           row.names = 1, 
+                           header=TRUE)
+
+#refprofiles <- read.csv("https://raw.githubusercontent.com/Nanostring-Biostats/CosMx-Cell-Profiles/main/Human/IO/IO.profiles.csv", row.names = 1, header = TRUE)
+# keep only genes we have in counts matrix
+#mouseprofiles <- mouseprofiles[is.element(rownames(mouseprofiles), colnames(counts)), #]
+pdf(paste0(results_dir, "/cosMxIO_mouseprofiles2_heatmap.pdf"), height=60, width=6, compress=FALSE)
+pheat <- pheatmap::pheatmap(sweep(mouseprofiles, 1, pmax(apply(mouseprofiles, 1, max), 0.2), "/"), 
+          fontsize_row = 5,
+          col = colorRampPalette(c("white", "darkblue"))(100))
+
+grid::grid.draw(pheat$gtable)
+dev.off()
+
+
+
+
+```
+
+Briefer Heatmap
+
+```{r}
+
+class(mouseprofiles)
+colnames(mouseprofiles)
+mouseprofiles$Gene <- rownames(mouseprofiles)
+
+# Calculate standard deviation and second highest value for each row
+mouseprofiles <- mouseprofiles %>%
+  rowwise() %>% # Operate on rows
+  mutate(
+    Standard_Deviation = sd(c_across(B.cell:T.cell.CD8)), # Standard deviation
+    Highest_Value = sort(c_across(B.cell:T.cell.CD8), decreasing = TRUE)[1],  
+    Second_Highest_Value = sort(c_across(B.cell:T.cell.CD8), decreasing = TRUE)[2] # Second highest value
+  ) %>%
+  ungroup() # Remove rowwise structure
+
+# View the result
+head(mouseprofiles)
+
+dim(mouseprofiles)
+# filter down to the interesting rows
+mouseprofiles2 <- mouseprofiles %>%
+   #dplyr::filter(Standard_Deviation > 0.5) 
+   dplyr::filter(Highest_Value - Second_Highest_Value > 0.5)
+
+dim(mouseprofiles2)
+```
+
+This reduced form of the heatmap focuses on more variable genes that are also unique to a single cell type. (specific).
+
+```{r}
+
+mouseprofiles3 <- as.data.frame(mouseprofiles2[,1:16])
+rownames(mouseprofiles3) <- mouseprofiles3$Gene
+mouseprofiles3 <- mouseprofiles3[,1:15]
+
+pdf(paste0(results_dir, "/cosMxIO_mouseprofiles_heatmap2.pdf"), height=20, width=6, compress=FALSE)
+pheat <- pheatmap::pheatmap(sweep(mouseprofiles3, 1, pmax(apply(mouseprofiles3, 1, max), 0.2), "/"), 
+          fontsize_row = 5,
+          col = colorRampPalette(c("white", "darkblue"))(100))
+
+grid::grid.draw(pheat$gtable)
+dev.off()
+```
+
+## InSituType
+
+### Mouse IO Profile
+
+Here we convert the Bruker provided Human IO profile to Mouse with use of the Human to Mouse gene conversion offered in the Gene List xls for the Mouse assay, loaded earlier to df_gene_data.
+
+```{r InSituType}
+
+# Convert Human to Mouse
+# load cosMx Cell Profile for Human IO
+human_cell_profile <- read.csv( "/Users/annmstrange/Documents/git/CosMx-Cell-Profiles/Human/IO/IO.profiles.csv",
+                                 row.names = 1)
+
+head(human_cell_profile)
+# inner join on Human_Gene
+human_cell_profile$gene <- rownames(human_cell_profile)
+new_matrix <- merge(human_cell_profile, df_gene_data, by.x ="gene", by.y= "Human_Gene")
+head(new_matrix)
+dim(human_cell_profile)
+dim(new_matrix)
+# Lost 100, which ones?
+setdiff(human_cell_profile$gene, new_matrix$gene)
+setdiff(df_gene_data$Display_Name, new_matrix$Display_Name)
+
+human_genes <- rownames(human_cell_profile)
+human_genes
+new_matrix <- new_matrix[,1:17]
+rownames(new_matrix) <- new_matrix$Display_Name
+new_matrix <- new_matrix[, -1]
+mouse_cell_profile <- new_matrix[, -16]
+head(mouse_cell_profile)
+
+# optional, save this CellProfile matrix for future use
+#write.csv( mouse_cell_profile, "/Users/annmstrange/Documents/git/CosMx-Cell-Profiles#/Human/IO/IO.profiles.mouse2.csv")
+
+
+```
+
+SemiSupervised InSituType
+
+```{r semisup}
+
+
+
+semisup <- run_insitu_type_unsup(sobj_spleen5, negmeans_vec, n_clusts = 4,title_suffix="InSituType4", group.by="Sample.ID", mouse_cell_profile, results_dir, mouseIO_colors)
+
+# redo plot 
+  # Plot the results
+  df_meta$cell_type <- semisup$clus
+  df_meta$CellType_InSitu4 <- semisup$clus
+  
+  df_meta <- df_meta %>%
+    mutate(!!group.by := gsub(" ", "_", .data[[group.by]])) %>%
+    select(!!group.by, cell_type)
+  
+  # df_meta <- df_meta %>%
+  #   mutate(Run_Tissue_name = gsub(" ", "_", Run_Tissue_name)) %>%
+  #   select(Run_Tissue_name, cell_type)
+  # 
+  df_celltype <- df_meta %>%
+    group_by_at(c(group.by, "cell_type")) %>%
+    summarise(count = n(), .groups = 'drop')
+  
+  p <- plot_celltypes(df_celltype, group.by, title_suffix, colors)
+
+
+
+  
+```
+
+###  ClusterDist
+
+```{r clusterdist}
+#| echo: false
+#| warning: false
+
+table(semisup$clust)
+# Add metadata
+sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_meta[c('CellType_InSitu4')])
+
+
+SeuratExtend::ClusterDistrBar(sobj_spleen5$orig.ident, sobj_spleen5$CellType_InSitu4,
+                              cols = mouseIO_colors)
+
+# Re-subset to get metadata
+sobj_spleen30 <- subset(sobj_spleen5, subset = Sample.ID == 30 & 
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen31 <- subset(sobj_spleen5, subset = Sample.ID == 31 & 
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen32 <- subset(sobj_spleen5, subset = Sample.ID == 32 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen34 <- subset(sobj_spleen5, subset = Sample.ID == 34 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen35 <- subset(sobj_spleen5, subset = Sample.ID == 35 & 
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+
+SeuratExtend::ClusterDistrBar(sobj_spleen30$orig.ident, 
+                              sobj_spleen30$CellType_InSitu4,
+                              cols = mouseIO_colors)
+
+SeuratExtend::ClusterDistrBar(sobj_spleen31$orig.ident, 
+                              sobj_spleen31$CellType_InSitu4,
+                              cols = mouseIO_colors)
+
+SeuratExtend::ClusterDistrBar(sobj_spleen32$orig.ident, 
+                              sobj_spleen32$CellType_InSitu4,
+                              cols = mouseIO_colors)
+
+SeuratExtend::ClusterDistrBar(sobj_spleen34$orig.ident, 
+                              sobj_spleen34$CellType_InSitu4,
+                              cols = mouseIO_colors)
+
+SeuratExtend::ClusterDistrBar(sobj_spleen35$orig.ident, 
+                              sobj_spleen35$CellType_InSitu4,
+                              cols = mouseIO_colors)
+
+```
+
+### Flighpath
+
+```{r}
+
+ flightpath <- InSituType::flightpath_layout(logliks = semisup$logliks, 
+                                               profiles = semisup$profiles)
+  # 
+  # # Save the plot as a PNG file
+# png(paste0(results_dir, paste0("/InSitu_FlightPath_for_",sanitize_name(title_suffix),".png")), width = 600, height = 600)  # Open the PNG device
+  cols <- 
+  par(mar = c(0,0,0,0))
+  plot(flightpath$cellpos, pch = 16, cex = 0.2, col = mouseIO_colors[semisup$clust])
+  text(flightpath$clustpos[, 1], flightpath$clustpos[, 2], rownames(flightpath$clustpos), cex = 0.7)
+  # dev.off()
+
+
+```
+
+```{r}
+# heatmap, featureplots, and spatial plots 
+
+
+
+
+```
+
+```{r}
+# Violin, Ridge
+```
+
+### DotPlot InSituType4
+
+```{r}
+# DotPlot
+
+# Function to find top n markers for a specific cluster
+clusters <- unique(sobj_spleen5@meta.data$CellType_InSitu4)
+
+# Apply the function to all clusters and combine results
+Idents(sobj_spleen5) <- 'CellType_InSitu4'
+top_markers <- map_dfr(clusters, get_top_markers, 15)
+
+table(top_markers$cluster)
+dim(top_markers) # num clusters * n
+head(top_markers)
+# also append our favorite cell typing markers
+
+genes_lineage <- c("Cd19", "Ptprc", "Cd8a", "Cd8b1", "Cd68", "Cd163","Itgax", "Itgam", "Cd3e", "Cd3d", "Fn1", "Acta2")
+
+# Compare DotPlots with top_markers limited by only ns celltyping genes, but
+# augmented with classic cell typing genes for comparison
+# remove any genes where the rowsum is too low unless its a lineage marker, try to keep with lower barriers. 
+markers_to_plot <- top_markers %>%
+    dplyr::filter ((gene %in% genes_cosMx_celltyping & (pct.1 + pct.2) > 0.1 
+                   & p_val_adj < 0.05) | gene %in% genes_lineage)
+
+dim(markers_to_plot) # 72 is somewhat reasonable; w repeats is really 36 unique genes
+
+DotPlot(sobj_spleen5, features = unique(markers_to_plot$gene)) + RotatedAxis() +
+  theme_minimal() + # Change to a minimal (white) background
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+    axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+    panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+    plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+    #panel.grid = element_blank() # Optional: remove grid lines if needed
+  ) +
+  ggtitle("Seurat InSituType4 top Log2FC")
+
+ggsave(paste0(results_dir, "/Clusters_InSitu4_DotPlot.png"), last_plot(), width = 12)
+
+
+head(markers_to_plot$gene)
+#get annotations
+df_celltype_markers <- df_gene_data2 %>%
+  filter(Display_Name %in% markers_to_plot$gene)
+#write.csv( df_celltype_markers, paste0(results_dir, "/cell_typing_markers.csv"))
+```
+
+### Updates
+
+```{r}
+#| echo: false
+#| warning: false
+
+# Renames
+
+# Marker updates
+# Cells labeled Macrophage with Itgax, change to DC
+# 
+# Cells labeled CD4+ with high CD8 marker, change to CD8 
+
+# how many cells on 34 have Itgax count > 0 and CellType_InSitu4 == "Macrophage"
+# Subset the Seurat object for cells that meet the conditions
+dc_cells <- subset(
+  sobj_spleen5, 
+  subset = CellType_InSitu4 == "Macrophage" & Itgax > 0
+)
+cat("Number of cells matching the criteria:", ncol(dc_cells), "\n")
+update_dc <- dc_cells$cell
+
+monocyte_cells <- subset(
+  sobj_spleen5,
+  subset = CellType_InSitu4 == "Macrophage" & Itgam > 0 & Cd14 >0)
+cat("Number of cells matching the criteria:", ncol(monocyte_cells), "\n")
+update_monocyte <- monocyte_cells$cell
+
+cd4_cells <- subset(
+  sobj_spleen5, 
+  subset = CellType_InSitu4 == "T.cell.CD8" & Cd8a == 0 & Cd8b1 == 0 & Cd4 > 0
+)
+cat("Number of cells matching the CD4 criteria:", ncol(cd4_cells), "\n")
+update_cd4 <- cd4_cells$cell
+
+cd8_cells <- subset(
+  sobj_spleen5, 
+  subset = CellType_InSitu4 == "T.cell.CD4" & (Cd8a > 0) > 0 & Cd4 == 0
+)
+cat("Number of cells matching the CD8 criteria:", ncol(cd8_cells), "\n")
+update_cd8 <- cd8_cells$cell
+
+# Make updates
+df_meta <- sobj_spleen5@meta.data[c('CellType_InSitu4', 'cell_id')]
+df_meta[update_dc, "CellType_InSitu4"] <- "Dendritic.cell"
+df_meta[update_monocyte, "CellType_InSitu4"] <- "Monocyte"
+df_meta[update_cd4, "CellType_InSitu4"] <- "T.cell.CD4"
+df_meta[update_cd8, "CellType_InSitu4"] <- "T.cell.CD8"
+sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_meta[c('CellType_InSitu4')])
+
+
+# Cluster renames
+# Rename the cluster
+Idents(sobj_spleen5) <- 'CellType_InSitu4'
+new_idents <- sobj_spleen5@meta.data$CellType_InSitu4 # Extract current identities
+new_idents[new_idents == "a"] <- "Neutrophil" # Rename 
+new_idents[new_idents == "b"] <- "Myofibroblast"
+new_idents[new_idents == "c"] <- "Erythroid.projenitor"
+new_idents[new_idents == "d"] <- "d" # ?? 
+new_idents[new_idents == "Plasmacytoid.dendritic.cell"] <- "pDC"
+sobj_spleen5@meta.data$CellType_InSitu4 <- new_idents
+#Idents(sobj_spleen5) <- new_idents # Update identities in the Seurat object
+
+table(sobj_spleen5@meta.data$CellType_InSitu4)  
+
+
+```
+
+```{r}
+
+
+DimPlot(sobj_spleen5, reduction = "umap", group.by = "CellType_InSitu4", alpha=0.5, cols=mouseIO_colors) + 
+  ggtitle("InSituType4")
+
+# highlight one cell type
+mouseIO_colors
+mouseIO_colors_monocytes <- ifelse(names(mouseIO_colors) == "Monocyte", 
+                                   "blue", 
+                                   "grey")
+names(mouseIO_colors_monocytes) <- names(mouseIO_colors)
+mouseIO_colors_monocytes
+
+DimPlot(sobj_spleen5, reduction = "umap", group.by = "CellType_InSitu4", alpha=0.5, cols=mouseIO_colors_monocytes) + 
+  ggtitle("InSituType4_monocytes")
+```
+
+```{r}
+# show certain molecules on the umap
+
+# Generate feature plots for the selected features
+feature_plots <- lapply(genes_lineage, function(feature) {
+  FeaturePlot(sobj_spleen5, features = feature)
+})
+
+# Combine plots into a grid
+CombinePlots(plots = feature_plots, ncol = 3)
+
+FeaturePlot(sobj_spleen5, c("Foxp3", "Il2ra"))
+FeaturePlot(sobj_spleen5, c("Cd4", "Cd8a", "Foxp3"))
+FeaturePlot(sobj_spleen5, c("Itgax"))
+FeaturePlot(sobj_spleen5, c("Itgam")) #, "C1qb", "Itgam"))
+
+FeaturePlot(sobj_spleen5, c("Cd14", "Ccr2", "Sell")) # Monocytes
+FeaturePlot(sobj_spleen5, c("Cd163", "Cd68", "Mrc1"))
+```
+
+## Spatial Celltype and Features
+
+```{r spatialfeature}
+Idents(sobj_spleen5) <- 'CellType_InSitu4'
+cells <- rownames(sobj_spleen5@meta.data)
+ImageDimPlot(sobj_spleen5, fov="fov34", flip_xy=FALSE, 
+             border.size = 0.07,
+             cols = mouseIO_colors,
+             axes = TRUE,
+             coord.fixed=TRUE )
+            #molecules = c("Itgax", "Irf4" )) # DC markers
+
+             
+ ImageDimPlot(sobj_spleen5, fov="fov30", flip_xy=FALSE, 
+             border.size = 0.07,
+             cols = mouseIO_colors,
+             axes = TRUE,
+             coord.fixed=TRUE,
+            molecules = c("Cd4", "Cd8a" )) # T cellmarkers           
+ 
+  ImageDimPlot(sobj_spleen5, fov="fov32", flip_xy=FALSE, 
+             border.size = 0.07,
+             cols = mouseIO_colors,
+             axes = TRUE,
+             coord.fixed=TRUE,
+            molecules = c("Cd4", "Cd8a" )) # T cellmarkers   
+
+```
+
+# Pending Cell Typing
+
+Resume here after cell typing is worked out.
+
+```{r}
+
+```
+
+## Calculate gene stats
+
+### Senescence vs Prolif
+
+Make a dataframe of the summary counts by sample (not cell type dependent; just get percent positive)
 
 ```{r markeroverlap}
 #df_meta <- sobj_spleen_even@meta.data
@@ -455,6 +1968,12 @@ df_30 <- df_30 %>%
                     ifelse(sen == 1, "sen", "neither"))))
                     
 table(df_30$sen_pt)
+df_31 <- df_31 %>%
+  mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
+  mutate(sen = ifelse(Cdkn1a > 0, 1, 0)) %>%
+  mutate(sen_pt = ifelse(prolif == 1 & sen ==1, "both",
+                  ifelse (prolif == 1, "prolif",
+                    ifelse(sen == 1, "sen", "neither"))))
 
 df_32 <- df_32 %>%
   mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
@@ -471,6 +1990,13 @@ df_34 <- df_34 %>%
                          ifelse (prolif == 1, "prolif",
                                  ifelse(sen == 1, "sen", "neither"))))
 table(df_34$sen_pt)
+df_35 <- df_35 %>%
+  mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
+  mutate(sen = ifelse(Cdkn1a > 0, 1, 0)) %>%
+  mutate(sen_pt = ifelse(prolif == 1 & sen ==1, "both",
+                  ifelse (prolif == 1, "prolif",
+                    ifelse(sen == 1, "sen", "neither"))))
+
 # add cell type to these, lookup for df_cell_types
 df_30 <- merge(df_30, df_cell_types, by="cell")
 dim(df_30)
@@ -486,6 +2012,7 @@ df_30_summary <- df_30 %>%
 
 df_30_summary$Sample.ID <- 30
 
+df_31 <- merge(df_31, df_cell_types, by="cell")
 df_32 <- merge(df_32, df_cell_types, by="cell")
 dim(df_32)
 # celltype breakdown for each
@@ -501,6 +2028,8 @@ df_32_summary$Sample.ID <- 32
 
 df_34 <- merge(df_34, df_cell_types, by="cell")
 dim(df_34)
+df_35 <- merge(df_35, df_cell_types, by="cell")
+
 # celltype breakdown for each
 df_34_summary <- df_34 %>%
   group_by(sen_pt, CellType) %>%
@@ -598,7 +2127,9 @@ pt_df <- data.frame(sample.id = sample.ids,
 print(pt_df)
 ```
 
-Summarize gene counts by fov to find ratios.
+### by FOV
+
+Summarize gene counts by fov to find ratios, to aide in selecting nice spatial examples to zoom
 
 We have overall percent cells positive for a Sample, find representative fovs
 
@@ -645,7 +2176,6 @@ df_fov_by_sample <- rbind(df_30_fov, df_32_fov, df_34_fov)
 write.csv(df_genes_by_sample, paste0(results_dir, "/key_genes_by_sample.csv"))
 write.csv(df_fov_by_sample, paste0(results_dir, "/key_genes_by_fov.csv"))
 
-#HERE. 
 
 
 df_spleen_sen_summary <- rbind(df_30_summary, df_32_summary, df_34_summary)
@@ -734,7 +2264,31 @@ pt_df <- data.frame(sample.id = sample.ids,
 print(pt_df)
 ```
 
-Calculate gene stats
+```{r countmatrices}
+
+exp_data <- as.matrix(GetAssayData(sobj_spleen5, assay="RNA", layer="counts"))
+norm_exp_data <- as.matrix(GetAssayData(sobj_spleen5, assay="RNA", layer="data"))
+class(exp_data)
+dim(exp_data) # 1000 x 191K
+# how to subset matrix by gene
+
+# which genes in genes_special not found as rownames in exp_data
+genes_special_not_found <- setdiff(genes_special, rownames(exp_data))
+print(genes_special_not_found)
+genes_special <- genes_special[!genes_special %in% genes_special_not_found]
+
+exp_data2 <- exp_data[genes_special, ]
+norm_exp_data2 <- norm_exp_data[genes_special,]
+dim(exp_data2) # 94 x 191K
+
+df_meta <- sobj_spleen5@meta.data
+# get cell counts per sample
+cell_counts_by_sample <- table(df_meta$Sample.ID)
+```
+
+## 
+
+Given the special genes list, and the count matrices, and metadata, get percent non-zero and mean pos expression into df_gene_stats.
 
 ```{r genestats}
 gene <- "Mki67"
@@ -793,6 +2347,8 @@ colnames(df_gene_stats) #<- c("sample", "expression.mean", "expression.sd", "gen
 df_gene_stats <- df_gene_stats[, c("gene", "sample","cell_count", "expression", "norm_expression")]
 head(df_gene_stats)
 ```
+
+### Agg Stats e.g CD3
 
 Gene Stats Summary, for genes that need aggregating such as Cd3e, Cd3d, Cd3g to CD3.
 
@@ -869,7 +2425,9 @@ Barplots to show relative expression levels by sample, to see which increase/dec
 print("Barplots placeholder")
 ```
 
-Crop FOVs for Spatial rendering of multiple molecules per TMA sample
+## SpatialFOVs
+
+Crop FOVs using bounding boxes of sample extents for Spatial rendering of multiple molecules per TMA sample. This is an alternate method to subsetting the object by sample number, and may result in trimmer plots.
 
 ```{r crop}
 ImageDimPlot(sobj_spleen5, fov="Sabaawynewcore091320245", axes=TRUE, flip_xy =FALSE )
@@ -886,6 +2444,7 @@ cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]],
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
 sobj_spleen5[["fov30"]] <- cropped.coords
 # do we have the right subregion?
+
 ImageDimPlot(sobj_spleen5, fov="fov30", axes=TRUE, flip_xy=FALSE)
 
 # fov31
@@ -913,11 +2472,76 @@ cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]],
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
 sobj_spleen5[["fov35"]] <- cropped.coords
 
-DefaultBoundary(sobj_spleen5[["fov30"]]) <- "centroids"
-DefaultBoundary(sobj_spleen5[["fov31"]]) <- "centroids" # "segmentation" # sets cell segmentation outline
-DefaultBoundary(sobj_spleen5[["fov32"]]) <- "centroids" # sets cell segmentation outline
-DefaultBoundary(sobj_spleen5[["fov34"]]) <- "centroids" # sets cell segmentation outline
-DefaultBoundary(sobj_spleen5[["fov35"]]) <- "centroids"
+DefaultBoundary(sobj_spleen5[["fov30"]]) <- "segmentation"
+DefaultBoundary(sobj_spleen5[["fov31"]]) <- "segmentation" # "segmentation" or "centroids" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov32"]]) <- "segmentation" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov34"]]) <- "segmentation" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen5[["fov35"]]) <- "segmentation"
 
 
 ```
+
+```{r spatial}
+
+# for fov or subset, e.g. fov 285, show celltypes and molecules
+# fov34
+fov_num <- 285
+# 
+bbox_mtx <- get_bbox_of_fov(df_meta, "Sabaawy new core 09/13/2024 5", fov_num)
+bbox_mtx
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+fov_name <- paste0("fov", fov_num)
+sobj_spleen5[[fov_name]] <- cropped.coords
+DefaultBoundary(sobj_spleen5[[fov_name]]) <- "segmentation" 
+
+ImageDimPlot(sobj_spleen5, fov="fov285", axes=TRUE, molecules= "Mki67", flip_xy = FALSE) #dark.background = FALSE)
+
+
+```
+
+### Zoom
+
+```{r}
+# square 1000 x 1000 from min (x,y)
+fov <- 285
+x_min <- 93000
+y_min <- 56600
+  size <- 1000
+  x_max <- x_min + size
+  y_max <- y_min + size
+  print(paste(y_min, y_max, x_min, x_max))
+  
+  #sobj_fov <- subset(sobj, subset = Sample.ID %in% sample_ids )
+  # Create a 2x2 matrix
+  bbox_mtx <- matrix(c(y_min, y_max, x_min, x_max), nrow = 2, byrow = TRUE,
+                         dimnames = list(c("y", "x"), c("min", "max")))
+
+#bbox_mtx <- get_bbox_from_corner(df_meta, "Sabaawy new core 09/13/2024 5", fov_num)
+bbox_mtx
+cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+zoom_name <- paste0("zoom", fov_num)
+sobj_spleen5[[zoom_name]] <- cropped.coords
+DefaultBoundary(sobj_spleen5[[zoom_name]]) <- "segmentation" 
+
+cols <- c("red", "blue", "pink", "green", "purple")
+ImageDimPlot(sobj_spleen5, fov="zoom285", axes=TRUE, 
+             molecules= c("Cdkna1","Mki67","Lmna", "Ccl5","Cxcl13"), 
+             mols.size = 2.0,
+             flip_xy = FALSE) #dark.background = FALSE)
+
+
+```
+
+```{r}
+Idents(sobj_spleen5) <- "seurat_cluster.5"
+DefaultBoundary(sobj_spleen5[["fov30"]]) <- "segmentation" 
+ImageDimPlot(sobj_spleen5, fov="fov30", axes=TRUE, flip_xy=FALSE, molecules= "Mki67", dark.background = TRUE)
+
+# smaller region
+
+
+```
+
+### 
