@@ -73,7 +73,7 @@ load_mouse_meta_load_missed <- function(sobj, metadata_file) {
   # this loads morph markers, measurements, X, Y, (global and local) and cell_ID
   
   df_obj_meta <- read.csv(metadata_file)
-  print(colnames(df_obj_meta))
+  #print(colnames(df_obj_meta))
   
   df_obj_meta$cell_num = df_obj_meta$cell_ID 
   df_obj_meta$key = paste0( df_obj_meta$cell_ID, "_", df_obj_meta$fov)
@@ -91,17 +91,17 @@ load_mouse_meta_load_missed <- function(sobj, metadata_file) {
     print ("These are the rows that are in the metadata file but not the Seurat obj, we will drop them from the metadata file.")
     print(head(lost_on_load))
   }
-  print("expect 0 cell differences")
-  print(setdiff(rownames(sobj@meta.data), rownames(df_obj_meta))) # 0
+  #print("expect 0 cell differences")
+  #print(setdiff(rownames(sobj@meta.data), rownames(df_obj_meta))) # 0
   
   # delete these from df_obj_metadata
   df_obj_meta <- df_obj_meta[!rownames(df_obj_meta) %in% lost_on_load,]
-  print(setdiff(rownames(df_obj_meta), rownames(sobj@meta.data))) # should now be 0
+  #print(setdiff(rownames(df_obj_meta), rownames(sobj@meta.data))) # should now be 0
   
   df_obj_meta$cell_ID <- df_obj_meta$key # restore cell_ID in standard format
   sobj <- AddMetaData(sobj, metadata = df_obj_meta)
-  head(sobj@meta.data)
-  head(rownames(sobj@meta.data))
+  #head(sobj@meta.data)
+  #head(rownames(sobj@meta.data))
   
   return (sobj)  
 }
@@ -374,7 +374,7 @@ subtract_neg_control <- function(obj, assay="RNA", layer="data"){
 #' obj <- remove_sys_control(obj, assay="Nanostring", layer="counts")
 remove_sys_control <- function(obj, assay="RNA", layer="counts"){
   # get negative probe feature indexes, pre-normalization 
-  counts_matrix <- GetAssayData(object = obj, assay = assay, layer=layer) ## or should use normalized?
+  counts_matrix <- GetAssayData(object = obj, assay = assay, layer=layer) 
   
   feature_names <- rownames(obj)
   # which feature_names in list begin with "Neg"?
@@ -384,18 +384,7 @@ remove_sys_control <- function(obj, assay="RNA", layer="counts"){
   genes_to_keep <- feature_names[!feature_names %in% sys_control_names]
   
   obj <- subset(obj, features = genes_to_keep)
-
-  # Get row indices 
-  #keep_indices <- which(!(feature_names %in% sys_control_names))
-  # Create sparse matrices for neg_feature_names and others
-  #keep_matrix <- counts_matrix[keep_indices, ]
-  
-  #print("Number of system control features to remove:")
-  #print(length(sys_control_names))
   print(paste("Remaining dimensions:", paste(dim(obj), collapse = " x ")))
-  #print(dim(keep_matrix))   # Dimensions of the matrix without 
- 
-  #obj[[assay]]@counts <- keep_matrix
   
   return(obj)
   
