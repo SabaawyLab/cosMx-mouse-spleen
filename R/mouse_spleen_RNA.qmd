@@ -1701,7 +1701,8 @@ head(dc.markers)
 
 ```
 ### Integration all
-Three way 
+
+Split by Sample.ID. 
 
 ```{r integrationall}
 
@@ -1710,17 +1711,18 @@ sobj_spleen_split2 <- sobj_spleen5
 # SPLIT
 #split object by WT and Hetero vs sample 34 only
 # Add a new column 'Split' based on 'Sample.ID'
-sobj_spleen_split2@meta.data$Split <- 
-    ifelse(sobj_spleen_split2@meta.data$Sample.ID %in% c(30, 32, 31, 33), "WTHetero",
-      ifelse(sobj_spleen_split2@meta.data$Sample.ID == 34, "Homoz34", 
-           ifelse(sobj_spleen_split2@meta.data$Sample.ID == 35, "Homoz35",NA)))
-table(sobj_spleen_split2@meta.data$Split)
-sobj_spleen_split2
+# sobj_spleen_split2@meta.data$Split <- 
+#     ifelse(sobj_spleen_split2@meta.data$Sample.ID %in% c(30, 32, 31, 33), "WTHetero",
+#       ifelse(sobj_spleen_split2@meta.data$Sample.ID == 34, "Homoz34", 
+#            ifelse(sobj_spleen_split2@meta.data$Sample.ID == 35, "Homoz35",NA)))
+# table(sobj_spleen_split2@meta.data$Split)
+# sobj_spleen_split2
 # why do I have counts.2, data.2? 
+sobj_spleen_split2@meta.data$Split <- sobj_spleen_split2@meta.data$Sample.ID
 
 # critical
 # This splits the object into layers including counts.2.Split2, counts.2.Split1, same for data
-sobj_spleen_split2[["RNA"]] <- split(sobj_spleen_split2[["RNA"]], f = sobj_spleen_split2$Split) 
+sobj_spleen_split2[["RNA"]] <- split(sobj_spleen_split2[["RNA"]], f = sobj_spleen_split2$Sample.ID) 
 sobj_spleen_split2
 
 
@@ -1769,6 +1771,7 @@ table(sobj_spleen_split2@meta.data$seurat_clusters)
 Idents(sobj_spleen_split2) <- 'seurat_clusters'
 DimPlot(sobj_spleen_split2, reduction = "umap", split.by = "Split", cols='polychrome')
 
+ggsave(paste0(results_dir, "/Integration_by_Sample_DimPlot.png"), width=12)
 # 0 B.cells
 # 1 (unknown, most in 35) 
 # 2 
