@@ -1506,9 +1506,13 @@ get_bbox_of_fov <- function(df_meta, Run_Tissue, fov_num) {
   return(bounding_box)
 }
 
-
 #' Given a Seurat object, return the counts matrix as a dataframe by cell
-get_counts_subset_df <- function(sobj){
+#'
+#' @param sobj Seurat object 
+#' @return counts matrix as a dataframe by cell
+#' @examples
+#' df <- get_counts_df (sobj_subset)
+get_counts_df <- function(sobj){
   
   exp_data <- as.matrix(GetAssayData(sobj, assay="RNA", layer="counts"))
   class(exp_data)
@@ -1611,4 +1615,57 @@ pct_non_zero <- function(x) {
 
 mean_non_zero <- function(x) {
   mean(x[x >0])
+}
+
+get_top_markers <- function(sobj, cluster, n=10) {
+  markers <- FindMarkers(sobj, ident.1 = cluster)
+  markers %>%
+    rownames_to_column(var = "gene") %>% # Add gene names as a column
+    dplyr::top_n(n, wt = abs(avg_log2FC)) %>%  # Select top 10 markers by absolute log2 fold change
+    dplyr::mutate(cluster = cluster)            # Add cluster information
+}
+
+
+
+# DotPlot
+
+my_dot_plot <- function (sobj, cluster_col='seurat_clusters', title='', results_dir, genes_cosMx_celltyping) {
+  
+  # Function to find top n markers for a specific cluster
+  clusters <- unique(sobj@meta.data[[cluster_col]])
+  print(clusters)
+  # Apply the function to all clusters and combine results
+  Idents(sobj) <- cluster_col
+  top_markers <- map_dfr(clusters, get_top_markers, sobj=sobj)
+  
+  #table(top_markers$cluster)
+  dim(top_markers) # num clusters * n
+  print(head(top_markers))
+  # also append our favorite cell typing markers
+  
+  # Genes we want to see because they are classic cell typing genes
+  genes_lineage <- c("Cd19", "Ptprc", "Cd8a", "Cd8b1", "Cd68", "Cd163","Itgax", "Itgam", "Cd3e", "Cd3d", "Fn1", "Acta2")
+  
+  # Compare DotPlots with top_markers limited by only ns celltyping genes, but
+  # augmented with classic cell typing genes for comparison
+  # remove any genes where the rowsum is too low unless its a lineage marker, try to keep with lower barriers. 
+  markers_to_plot <- top_markers %>%
+    dplyr::filter ((top_markers$gene %in% genes_cosMx_celltyping & (top_markers$pct.1 + top_markers$pct.2) > 0.1
+                    & top_markers$p_val_adj < 0.05) | top_markers$gene %in% genes_lineage)
+
+  dim(markers_to_plot) # 72 is somewhat reasonable; w repeats is really 36 unique genes
+
+  p <- DotPlot(sobj, features = unique(markers_to_plot$gene)) + RotatedAxis() +
+    theme_minimal() + # Change to a minimal (white) background
+    theme(
+      axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+      axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+      panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+      plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+      #panel.grid = element_blank() # Optional: remove grid lines if needed
+    ) +
+    ggtitle(title)
+
+  ggsave(paste0(results_dir, "",sanitize_name(title),"_DotPlot.png"), p, width = 12)
+  return(p)
 }

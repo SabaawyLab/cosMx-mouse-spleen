@@ -73,7 +73,7 @@ library(readxl)
 library(openxlsx)
 library(grid)
 library(gridExtra)
-# library(Giotto) # nice for fov plots but has some hurdles due to changing file structure from cosMx.  Also, the morphology composite images are no longer available.
+
 ```
 
 Setup variables, make sure to change paths for the files needed.
@@ -121,6 +121,8 @@ run_name <- '20240920_233038_S1' # matches slide_name
 # cell_label_names <- c('c_1', 'c_2', 'c_3', 'c_4')
 
 results_dir <- paste0(root_dir, "/spleen_results")
+saved_rds_dir <- paste0(root_dir, "/saved_objs")
+file.exists(saved_rds_dir)
 
 rna_root_dir <- paste0(root_dir, '/RawFiles') # or flatFiles
 rna_flatfiles_dir <- paste0(root_dir, '/flatFiles')
@@ -259,27 +261,33 @@ names(celltype_colors) <- c("B.cell", "Dendritic.cell", "Endothelial",
                             "a","b","c","d", "e")
 
 # change to my labels 
-mouseIO_colors <- c("#1b9e77", "#7570b3", "#e7298a", "#66a61e", "#e6ab02",
-                    "#a6761d", "#b3cc1a", "#377eb8", "#f87878",  "#4daf4a", "#984ea3",
-                    "#a65628", "#af648b", "#999999", "#999999",
-                    "#ff7f00", "#ff7f00", "turquoise", "lightblue",
-                    "#cccccc", "#dddddd", "#555555",
-                    "#444444", "#555555", "#666666", "darkgreen", "#ff7f00",
-                    "lightgreen", "turquoise", "lightblue", "peachpuff", "pink")
+mouseIO_colors <- c("#1b9e77", "#7570b3", "#e7298a", "tan", "#e6ab02",
+                    "#a6761d", "#b3cc1a", "#377eb8", "#f87878",  "#4daf4a", "darkgreen", # #984ea3",
+                    "#af648b", "#a6761d",  "#af648b", "#999999", "#999999",
+                    "turquoise", "pink", "pink",  #  "lightblue",
+                    "#cccccc", "#dddddd", "#555555", "#444444", "#555555", "#666666", 
+                    "darkgreen",
+                    "#b3cc1a", "#b3cc1a",
+                    "lavender", "turquoise", "lightblue", "peachpuff", "lightyellow",
+                    "#a65628", "lightyellow",  "limegreen", "#66a61e",
+                    "#984ea3", "grey50")
+
 
 names(mouseIO_colors) <- c("B.cell", "Dendritic.cell", "Endothelial", 
-                            "Fibroblast", "Macrophage", "Mast.cell",
-                            "Monocyte", "Neutrophil", "NK.cell", "Plasma",
-                            "Plasmablast", "T.cell.CD4", "T.cell.CD8",
-                            "T.cell.regulatory", "T.cell.reg",
-                            "Plasmacytoid.dendritic.cell", "pDC",
-                            "Myofibroblast", "Erythroid.projenitor",
-                            "unknown", "Unknown.34", "Unknown.35",
-                           "Unknown.7","Unknown.9", "Unknown.14", "B.cell.like", "Macrophage/Monocytes",
-                            "a","b","c","d", "e")
+                                 "Fibroblast", "Macrophage", 
+                            "Mast.cell", "Monocyte", "Neutrophil", "NK", "Plasma", "Plasmablast", 
+                           "T.cell", "T.cell.CD4", "T.cell.CD8", "T.cell.regulatory", "T.cell.reg", 
+                           "Myofibroblast", "Erythroid.projenitor", "Erythroid.Projenitor",
+                            "unknown", "Unknown.34", "Unknown.35", "Unknown.7","Unknown.9", "Unknown.14",
+                           "B.cell.like", 
+                           "Macrophage/Monocytes", "Monocyte/Macrophage", 
+                            "a","b","c","d", "e",
+                           "NK.or.T.cell", "Basophil.like","B.cell.2","B.cell.3",
+                           "Granulocyte" , "ECM")
 
 
 # molecule colors #00ffff cyan, #ff0000 red, 
+
 
 
 ```
@@ -441,6 +449,8 @@ sobj_spleen30 <- subset(sobj_spleen5, subset = Sample.ID == 30 &
 sobj_spleen31 <- subset(sobj_spleen5, subset = Sample.ID == 31 & 
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
 sobj_spleen32 <- subset(sobj_spleen5, subset = Sample.ID == 32 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen33 <- subset(sobj_spleen5, subset = Sample.ID == 33 &
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
 sobj_spleen34 <- subset(sobj_spleen5, subset = Sample.ID == 34 &
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
@@ -721,9 +731,9 @@ DotPlot Setup
 genes_cosMx_celltyping <- get_nanostring_celltyping_genes(ns_gene_fn)
 cat("Nanostring lists", length(genes_cosMx_celltyping), "genes for celltyping" )
 
-get_top_markers <- function(cluster, n) {
+get_top_markers <- function(sobj, cluster, n) {
   # depends on Idents being set correctly 
-  markers <- FindMarkers(sobj_spleen5, ident.1 = cluster)
+  markers <- FindMarkers(sobj, ident.1 = cluster)
   markers %>%
     rownames_to_column(var = "gene") %>% # Add gene names as a column
     top_n(n, wt = abs(avg_log2FC)) %>%  # Select top 10 markers by absolute log2 fold change
@@ -773,6 +783,10 @@ DotPlot(sobj_spleen5, features = unique(markers_to_plot$gene)) + RotatedAxis() +
 
 ggsave(paste0(results_dir, "/Clusters_unsup6_DotPlot.png"), last_plot(), width = 12)
 
+# tip:
+# before running this, make sure no clusters are tiny. merge/rename
+
+
 
 head(markers_to_plot$gene)
 #get annotations
@@ -821,7 +835,7 @@ clusters <- unique(sobj_spleen5@meta.data$CellType)
 
 # Apply the function to all clusters and combine results
 Idents(sobj_spleen5) <- 'CellType'
-top_markers <- map_dfr(clusters, get_top_markers, 15)
+top_markers <- map_dfr(clusters, get_top_markers, sobj = sobj_spleen5, n = 15)
 
 table(top_markers$cluster)
 dim(top_markers) # num clusters * n
@@ -886,7 +900,7 @@ clusters <- unique(Idents(sobj_spleen5))
 n <- 15
 
 # Apply the function to all clusters and combine results
-top_markers <- map_dfr(clusters, get_top_markers, 15)
+top_markers <- map_dfr(clusters, get_top_markers, sobj = sobj_spleen5, n = n)
 
 table(top_markers$cluster)
 dim(top_markers) # 150 -> 91. 
@@ -1031,30 +1045,6 @@ SeuratExtend::FeaturePlot3(sobj_spleen5, feature.1 = "Lmna", feature.2 = "Mki67"
 
 ```
 
-Requested, separate Umaps by Sample. Then what?
-
-```{r separateUmaps}
-
-run_pca_stuff <- function(sobj) {
-  sobj <- FindVariableFeatures(object = sobj) 
-  sobj <- ScaleData(sobj)
-  sobj <- RunPCA(sobj, verbose = FALSE, npcs = 30)
-
-  sobj <- FindNeighbors(sobj, dims = 1:30)
-  sobj <- FindClusters(sobj,  cluster.name='seurat_cluster.4', resolution=0.4, verbose = FALSE)
-  sobj <- RunUMAP(sobj, dims = 1:20, spread=5, min_dist = 0.1, n_neighbors=20) # from 0.1, 30
-
-  return(sobj)
-}
-
-sobj_spleen30 <- run_pca_stuff(sobj_spleen30)
-sobj_spleen31 <- run_pca_stuff(sobj_spleen31)
-sobj_spleen32 <- run_pca_stuff(sobj_spleen32)
-sobj_spleen34 <- run_pca_stuff(sobj_spleen34)
-sobj_spleen35 <- run_pca_stuff(sobj_spleen35)
-
-
-```
 
 ```{r subsetagain}
 #| echo: false
@@ -1070,6 +1060,8 @@ sobj_spleen30 <- subset(sobj_spleen5, subset = Sample.ID == 30 &
 sobj_spleen31 <- subset(sobj_spleen5, subset = Sample.ID == 31 & 
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
 sobj_spleen32 <- subset(sobj_spleen5, subset = Sample.ID == 32 &
+                          Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
+sobj_spleen33 <- subset(sobj_spleen5, subset = Sample.ID == 33 &
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
 sobj_spleen34 <- subset(sobj_spleen5, subset = Sample.ID == 34 &
                           Run_Tissue_name == "Sabaawy new core 09/13/2024 5")
@@ -1098,17 +1090,65 @@ SeuratExtend::ClusterDistrBar(sobj_spleen35$orig.ident,
 
 ```
 
-```{r eachumap}
+Requested, separate Umaps by Sample. Then what?
 
-# Unlabled
+```{r separateUmaps}
 
-DimPlot(sobj_spleen30, reduction = "umap", alpha=0.5, cols='polychrome')
-DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
-DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
-DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
-DimPlot(sobj_spleen35, reduction = "umap", alpha=0.5, cols='polychrome')
+run_pca_stuff <- function(sobj) {
+  sobj <- FindVariableFeatures(object = sobj) 
+  sobj <- ScaleData(sobj)
+  sobj <- RunPCA(sobj, verbose = FALSE, npcs = 30)
+
+  sobj <- FindNeighbors(sobj, dims = 1:30)
+  sobj <- FindClusters(sobj,  cluster.name='seurat_cluster.6', resolution=0.6, verbose = FALSE)
+  sobj <- RunUMAP(sobj, dims = 1:20, spread=5, min_dist = 0.1, n_neighbors=20) # from 0.1, 30
+
+  return(sobj)
+}
+
+sobj_spleen30 <- run_pca_stuff(sobj_spleen30)
+sobj_spleen31 <- run_pca_stuff(sobj_spleen31)
+sobj_spleen32 <- run_pca_stuff(sobj_spleen32)
+sobj_spleen33 <- run_pca_stuff(sobj_spleen33)
+sobj_spleen34 <- run_pca_stuff(sobj_spleen34)
+sobj_spleen35 <- run_pca_stuff(sobj_spleen35)
+
 
 ```
+
+
+```{r eachumap}
+
+# Unlabeled
+
+DimPlot(sobj_spleen30, reduction = "umap", alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen31, reduction = "umap",  alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen33, reduction = "umap",  alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
+DimPlot(sobj_spleen35, reduction = "umap",alpha=0.5, cols='polychrome')
+
+```
+## DotPlots by Sample
+
+```{r dotploteach}
+
+p1 <- my_dot_plot(sobj_spleen30, cluster_col="seurat_clusters", title="Sample30", results_dir, genes_cosMx_celltyping)
+p1
+p2 <- my_dot_plot(sobj_spleen31, cluster_col="seurat_clusters", title="Sample31", results_dir, genes_cosMx_celltyping)
+p2
+p3 <- my_dot_plot(sobj_spleen32, cluster_col="seurat_clusters", title="Sample32", results_dir, genes_cosMx_celltyping)
+p3
+p4 <- my_dot_plot(sobj_spleen33, cluster_col="seurat_clusters", title="Sample33", results_dir, genes_cosMx_celltyping)
+p4
+p5 <- my_dot_plot(sobj_spleen34, cluster_col="seurat_clusters", title="Sample34", results_dir, genes_cosMx_celltyping)
+p5
+p6 <- my_dot_plot(sobj_spleen35, cluster_col="seurat_clusters", title="Sample35", results_dir, genes_cosMx_celltyping)
+p6
+
+
+```
+
 
 ```{r eachumap2}
 
@@ -1119,6 +1159,8 @@ Idents(sobj_spleen31) <- "CellType_sup"
 DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen32) <- "CellType_sup"
 DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen33) <- "CellType_sup"
+DimPlot(sobj_spleen33, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen34) <- "CellType_sup"
 DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen35) <- "CellType_sup"
@@ -1132,6 +1174,8 @@ Idents(sobj_spleen31) <- "CellType"
 DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen32) <- "CellType"
 DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen33) <- "CellType"
+DimPlot(sobj_spleen33, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen34) <- "CellType"
 DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen35) <- "CellType"
@@ -1146,7 +1190,9 @@ Idents(sobj_spleen31) <- "CellType_Label"
 DimPlot(sobj_spleen31, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen32) <- "CellType_Label"
 DimPlot(sobj_spleen32, reduction = "umap", alpha=0.5, cols='polychrome')
-Idents(sobj_spleen34) <- "CellType_Label"
+Idents(sobj_spleen32) <- "CellType_Label"
+DimPlot(sobj_spleen33, reduction = "umap", alpha=0.5, cols='polychrome')
+Idents(sobj_spleen33) <- "CellType_Label"
 DimPlot(sobj_spleen34, reduction = "umap", alpha=0.5, cols='polychrome')
 Idents(sobj_spleen35) <- "CellType_Label"
 DimPlot(sobj_spleen35, reduction = "umap", alpha=0.5, cols='polychrome')
@@ -1243,16 +1289,9 @@ clusters <- unique(Idents(sobj_spleen5))
 
 # Function to find top n markers for a specific cluster
 n <- 15
-get_top_markers <- function(cluster) {
-  markers <- FindMarkers(sobj_spleen5, ident.1 = cluster)
-  markers %>%
-    rownames_to_column(var = "gene") %>% # Add gene names as a column
-    top_n(n, wt = abs(avg_log2FC)) %>%  # Select top 10 markers by absolute log2 fold change
-    mutate(cluster = cluster)            # Add cluster information
-}
 
 # Apply the function to all clusters and combine results
-top_markers <- map_dfr(clusters, get_top_markers)
+top_markers <- map_dfr(clusters, get_top_markers, sobj=sobj)
 
 table(top_markers$cluster)
 dim(top_markers) # 150 -> 91. 
@@ -1617,64 +1656,64 @@ FeatureScatter(sobj1, feature1 = "GeneA", feature2 = "GeneB", group.by = "orig.i
 
 # Viz Neighbors 
 
-sobj_spleen_split1 <- subset(sobj_spleen5, subset = Sample.ID != 35)
-
-# critical
-#split object by WT and Hetero vs sample 34 only
-# Add a new column 'Split' based on 'Sample.ID'
-sobj_spleen_split1@meta.data$Split <- ifelse(sobj_spleen_split1@meta.data$Sample.ID %in% c(30, 31, 32, 33), "Split1",
-                                        ifelse(sobj_spleen_split1@meta.data$Sample.ID == 34, "Split2", NA))
-table(sobj_spleen_split1@meta.data$Split)
-sobj_spleen_split1
-# why do I have counts.2, data.2? 
-
-# This splits the object into layers including counts.2.Split2, counts.2.Split1, same for data
-sobj_spleen_split1[["RNA"]] <- split(sobj_spleen_split1[["RNA"]], f = sobj_spleen_split1$Split) 
-sobj_spleen_split1
-
-# run standard anlaysis workflow
-sobj_spleen_split1 <- NormalizeData(sobj_spleen_split1)
-sobj_spleen_split1 <- FindVariableFeatures(sobj_spleen_split1)
-sobj_spleen_split1 <- ScaleData(sobj_spleen_split1)
-sobj_spleen_split1 <- RunPCA(sobj_spleen_split1)
-sobj_spleen_split1 <- FindNeighbors(sobj_spleen_split1, dims = 1:30, reduction = "pca")
-sobj_spleen_split1 <- FindClusters(sobj_spleen_split1, resolution = 2, cluster.name = "unintegrated_clusters")
-sobj_spleen_split1 <- RunUMAP(sobj_spleen_split1, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
-
-
-table(sobj_spleen_split1@meta.data$Sample.ID)
-table(sobj_spleen_split1@meta.data$CellType_Label6)
-Idents(sobj_spleen_split1) <- "CellType_Label6"
-
-# Integration
-Idents(sobj_spleen_split1) <- "Split"
-sobj_spleen_split1 <- IntegrateLayers(object = sobj_spleen_split1, method = CCAIntegration, orig.reduction = "pca", new.reduction = "integrated.cca",
-    verbose = TRUE)
-
-# features <- rownames(sobj_spleen_split1[["RNA"]])
-# length(features)  # Count the number of features
-# head(features)    # Check the first few feature names
-
-
-# re-join layers after integration
-sobj_spleen_split1[["RNA"]] <- JoinLayers(sobj_spleen_split1[["RNA"]])
-
-sobj_spleen_split1 <- FindNeighbors(sobj_spleen_split1, reduction = "integrated.cca", dims = 1:30)
-sobj_spleen_split1 <- FindClusters(sobj_spleen_split1, resolution = 1)
-sobj_spleen_split1 <- RunUMAP(sobj_spleen_split1, dims = 1:30, reduction = "integrated.cca")
-# Visualization
-DimPlot(sobj_spleen_split1, reduction = "umap", group.by = c("Split", "CellType_Label6"))
-
-DimPlot(sobj_spleen_split1, reduction = "umap", group.by = c("Sample.ID"))
-DimPlot(sobj_spleen_split1, reduction = "umap", group.by = c("CellType_Label6"))
+# sobj_spleen_split1 <- subset(sobj_spleen5, subset = Sample.ID != 35)
+# 
+# # critical
+# #split object by WT and Hetero vs sample 34 only
+# # Add a new column 'Split' based on 'Sample.ID'
+# sobj_spleen_split1@meta.data$Split <- ifelse(sobj_spleen_split1@meta.data$Sample.ID %in% c(30, 31, 32, 33), "Split1",
+#                                         ifelse(sobj_spleen_split1@meta.data$Sample.ID == 34, "Split2", NA))
+# table(sobj_spleen_split1@meta.data$Split)
+# sobj_spleen_split1
+# # why do I have counts.2, data.2? 
+# 
+# # This splits the object into layers including counts.2.Split2, counts.2.Split1, same for data
+# sobj_spleen_split1[["RNA"]] <- split(sobj_spleen_split1[["RNA"]], f = sobj_spleen_split1$Split) 
+# sobj_spleen_split1
+# 
+# # run standard anlaysis workflow
+# sobj_spleen_split1 <- NormalizeData(sobj_spleen_split1)
+# sobj_spleen_split1 <- FindVariableFeatures(sobj_spleen_split1)
+# sobj_spleen_split1 <- ScaleData(sobj_spleen_split1)
+# sobj_spleen_split1 <- RunPCA(sobj_spleen_split1)
+# sobj_spleen_split1 <- FindNeighbors(sobj_spleen_split1, dims = 1:30, reduction = "pca")
+# sobj_spleen_split1 <- FindClusters(sobj_spleen_split1, resolution = 2, cluster.name = "unintegrated_clusters")
+# sobj_spleen_split1 <- RunUMAP(sobj_spleen_split1, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
+# 
+# 
+# table(sobj_spleen_split1@meta.data$Sample.ID)
+# table(sobj_spleen_split1@meta.data$CellType_Label6)
+# Idents(sobj_spleen_split1) <- "CellType_Label6"
+# 
+# # Integration
+# Idents(sobj_spleen_split1) <- "Split"
+# sobj_spleen_split1 <- IntegrateLayers(object = sobj_spleen_split1, method = CCAIntegration, orig.reduction = "pca", new.reduction = "integrated.cca",
+#     verbose = TRUE)
+# 
+# # features <- rownames(sobj_spleen_split1[["RNA"]])
+# # length(features)  # Count the number of features
+# # head(features)    # Check the first few feature names
+# 
+# 
+# # re-join layers after integration
+# sobj_spleen_split1[["RNA"]] <- JoinLayers(sobj_spleen_split1[["RNA"]])
+# 
+# sobj_spleen_split1 <- FindNeighbors(sobj_spleen_split1, reduction = "integrated.cca", dims = 1:30)
+# sobj_spleen_split1 <- FindClusters(sobj_spleen_split1, resolution = 1)
+# sobj_spleen_split1 <- RunUMAP(sobj_spleen_split1, dims = 1:30, reduction = "integrated.cca")
+# # Visualization
+# DimPlot(sobj_spleen_split1, reduction = "umap", group.by = c("Split", "CellType_Label6"))
+# 
+# DimPlot(sobj_spleen_split1, reduction = "umap", group.by = c("Sample.ID"))
+# DimPlot(sobj_spleen_split1, reduction = "umap", group.by = c("CellType_Label6"))
 
 ```
 
 ```{r integration2}
-
-table(sobj_spleen_split1@meta.data$seurat_clusters)
-Idents(sobj_spleen_split1) <- 'seurat_clusters'
-DimPlot(sobj_spleen_split1, reduction = "umap", split.by = "Split")
+# 
+# table(sobj_spleen_split1@meta.data$seurat_clusters)
+# Idents(sobj_spleen_split1) <- 'seurat_clusters'
+# DimPlot(sobj_spleen_split1, reduction = "umap", split.by = "Split")
 
 
 ```
@@ -1704,6 +1743,7 @@ head(dc.markers)
 
 Split by Sample.ID. 
 
+
 ```{r integrationall}
 
 sobj_spleen_split2 <- sobj_spleen5
@@ -1732,7 +1772,7 @@ sobj_spleen_split2 <- FindVariableFeatures(sobj_spleen_split2)
 sobj_spleen_split2 <- ScaleData(sobj_spleen_split2)
 sobj_spleen_split2 <- RunPCA(sobj_spleen_split2)
 sobj_spleen_split2 <- FindNeighbors(sobj_spleen_split2, dims = 1:30, reduction = "pca")
-sobj_spleen_split2 <- FindClusters(sobj_spleen_split2, resolution = 2, cluster.name = "unintegrated_clusters")
+sobj_spleen_split2 <- FindClusters(sobj_spleen_split2, resolution = 1.7, cluster.name = "unintegrated_clusters")
 
 
 table(sobj_spleen_split2@meta.data$Sample.ID)
@@ -1753,9 +1793,11 @@ sobj_spleen_split2 <- IntegrateLayers(object = sobj_spleen_split2, method = CCAI
 # re-join layers after integration
 sobj_spleen_split2[["RNA"]] <- JoinLayers(sobj_spleen_split2[["RNA"]])
 
-sobj_spleen_split2 <- FindNeighbors(sobj_spleen_split2, reduction = "integrated.cca", dims = 1:30)
-sobj_spleen_split2 <- FindClusters(sobj_spleen_split2, resolution = 1)
-sobj_spleen_split2 <- RunUMAP(sobj_spleen_split2, dims = 1:30, reduction = "integrated.cca")
+sobj_spleen_split2 <- FindNeighbors(sobj_spleen_split2, reduction = "integrated.cca", dims = 1:20)
+sobj_spleen_split2 <- FindClusters(sobj_spleen_split2, resolution = 0.8)
+sobj_spleen_split2 <- RunUMAP(sobj_spleen_split2, dims = 1:20, reduction = "integrated.cca")
+DimPlot(sobj_spleen_split2, reduction = "umap", group.by = c("seurat_clusters"), cols='polychrome')
+
 # Visualization
 DimPlot(sobj_spleen_split2, reduction = "umap", group.by = c("Split", "CellType_Label6"))
 
@@ -1763,7 +1805,21 @@ DimPlot(sobj_spleen_split2, reduction = "umap", group.by = c("Sample.ID"))
 DimPlot(sobj_spleen_split2, reduction = "umap", group.by = c("CellType_Label6"), cols='polychrome')
 
 
+# SAVE here, after Integration AND Seurat clustering steps. 
+#saveRDS(sobj_spleen_split2, paste0(saved_rds_dir, "/sobj_spleen_split2_postIntegration_v1.RDS"))
+
+#saveRDS(sobj_spleen_split2, paste0(saved_rds_dir, "/sobj_spleen_split2_postIntegration_121624.RDS"))
+
+
 ```
+
+```{r resumehere}
+
+sobj_spleen_split2 <- readRDS(paste0(saved_rds_dir, "/sobj_spleen_split2_postIntegration_121624.RDS"))
+
+```
+
+
 ```{r integ2b}
 
 
@@ -1771,23 +1827,9 @@ table(sobj_spleen_split2@meta.data$seurat_clusters)
 Idents(sobj_spleen_split2) <- 'seurat_clusters'
 DimPlot(sobj_spleen_split2, reduction = "umap", split.by = "Split", cols='polychrome')
 
-ggsave(paste0(results_dir, "/Integration_by_Sample_DimPlot.png"), width=12)
-# 0 B.cells
-# 1 (unknown, most in 35) 
-# 2 
-# 3
-# 4 Tcell
-# 5 Tcell
-# 6 also B cell
-# 7 Tcell 
+#ggsave(paste0(results_dir, "/Integration_by_Sample_DimPlot.png"), width=12)
 
-# 11 ?
-# 12
-# 13 (cb DC) and 16 were Neutrophils
-# 15 Plasma
-# 17 macrophage 
-# 18 disappears in Homoz. 
-# 19 left protrusion - more B cells
+
 
 ```
 ### Integration Labelling
@@ -1801,28 +1843,29 @@ df_meta <- sobj_spleen_split2@meta.data
 df_meta <- df_meta %>%
   mutate(CellType_Integrated = case_when(
     seurat_clusters == 0 ~ "B.cell",
-    seurat_clusters  == 1 ~ "1",
-    seurat_clusters  == 2 ~ "2",
-    seurat_clusters == 3 ~ "Erythroid.Projenitor",
-    seurat_clusters  == 4 ~ "T.cell",
-    seurat_clusters  == 5 ~ "T.cell.2",
-    seurat_clusters == 6 ~ "6",
-    seurat_clusters  == 7 ~ "T.cell.3",
-    seurat_clusters  == 8 ~ "B.cell.like",
+    seurat_clusters  == 1 ~ "T.cell",
+    seurat_clusters  == 2 ~ "B.cell",
+    seurat_clusters == 3 ~ "Monocyte", 
+    seurat_clusters  == 4 ~ "Fibroblast", 
+    seurat_clusters  == 5 ~ "c", # ?
+    seurat_clusters == 6 ~ "a", # mostly sample 35 
+    seurat_clusters  == 7 ~ "b", # Platelets or basophiles
+    seurat_clusters  == 8 ~ "c", # Basophil.like",
     seurat_clusters == 9 ~ "Dendritic.cell",
-    seurat_clusters  == 10 ~ "10",
-    seurat_clusters  == 11 ~ "11",
-    seurat_clusters == 12 ~ "12",
-    seurat_clusters  == 13 ~ "Neutrophil.like",
-    seurat_clusters  == 14 ~ "B.cell",
-    seurat_clusters  == 15 ~ "Plasma",
-    seurat_clusters == 16 ~ "Neutrophil",
-    seurat_clusters  == 17 ~ "Macrophage",
-    seurat_clusters  == 18 ~ "18",
-    seurat_clusters  == 19 ~ "B.cell.2",
+    seurat_clusters  == 10 ~ "Erythroid.Projenitor",
+    seurat_clusters  == 11 ~ "B.cell",
+    seurat_clusters == 12 ~ "Neutrophil",
+    seurat_clusters  == 13 ~ "Plasma",
+    seurat_clusters  == 14 ~ "Granulocyte", # Granulocyte
+    seurat_clusters  == 15 ~ "Macrophage",
+    seurat_clusters == 16 ~ "d",
+    seurat_clusters  == 17 ~ "d", # "Macrophage" had only 2,
+    seurat_clusters  == 18 ~ "d", # 2 cells only
+    seurat_clusters  == 19 ~ "d", # 2 cells only
     TRUE ~ "other" # Optional: handle unexpected values
   ))
 
+table(df_meta$CellType_Integrated)
 
 sobj_spleen_split2 <- AddMetaData(sobj_spleen_split2, metadata = df_meta[c('CellType_Integrated')])
 sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_meta[c('CellType_Integrated', 'seurat_clusters', 'Split')])
@@ -1830,8 +1873,42 @@ sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_meta[c('CellType_Integra
 
 ```
 
+```{r integ_umap}
+
+Idents(sobj_spleen_split2) <- "CellType_Integrated"
+DimPlot(sobj_spleen_split2, reduction = "umap", group.by = c("seurat_clusters"), label=TRUE)
+
+cols <- mouseIO_colors[sobj_spleen_split2@meta.data$CellType_Integrated]
+# ARe any cell types unlabelled with a color?
+unique(sobj_spleen_split2@meta.data$CellType_Integrated[which(is.na(cols))])
+
+
+
+# set factor levels to control legend, but missing ones wb NA
+Idents(sobj_spleen_split2) <- factor(sobj_spleen_split2@meta.data$CellType_Integrated, levels =
+                                       c("B.cell", "Plasma", "T.cell",
+                                         "Neutrophil", "Dendritic.cell", "Macrophage", "Monocyte",
+                                         "Erythroid.Projenitor", "Granulocyte", "Fibroblast",
+                                         "a","b","c","d","e"))
+                                        
+DimPlot(sobj_spleen_split2, reduction = "umap", cols=cols, label=TRUE)                                                                            
+
+ggsave(paste0(results_dir, "/Integrated_Umap_Labeled.png"), last_plot(), dpi=300)
+
+```
+```{r}
+
+#Idents(sobj_spleen_split2) <- "CellType_Integrated"
+DimPlot(sobj_spleen_split2, reduction = "umap", split.by = "Split", cols=cols)
+ggsave(paste0(results_dir, "/Integration_by_Sample_DimPlot.png"),  width=20, height=5, dpi=300)
+
+```
+
+
 
 ```{r label}
+ #| echo: false
+ #| warning: false
 
 # Assign some labels
 # get conserved markers
@@ -1840,44 +1917,32 @@ sobj_spleen5 <- AddMetaData(sobj_spleen5, metadata = df_meta[c('CellType_Integra
 #library(multtest)
 # find Conserved markers across conditions
 
-Idents(sobj_spleen5) <- "CellType_Integrated"
-table(sobj_spleen5@meta.data$CellType_Integrated)
+Idents(sobj_spleen_split2) <- "CellType_Integrated"
+table(sobj_spleen_split2@meta.data$CellType_Integrated)
 
-bcell.markers <- Seurat::FindConservedMarkers(sobj_spleen5, ident.1 = "B.cell", grouping.var = "Split", verbose = FALSE)
+bcell.markers <- Seurat::FindConservedMarkers(sobj_spleen_split2, ident.1 = "B.cell", grouping.var = "Split", verbose = FALSE)
 head(bcell.markers)
 
-neutrophil.markers <- Seurat::FindConservedMarkers(sobj_spleen5, ident.1 = "Neutrophil", grouping.var = "Split", verbose = FALSE)
+neutrophil.markers <- Seurat::FindConservedMarkers(sobj_spleen_split2, ident.1 = "Neutrophil", grouping.var = "Split", verbose = FALSE)
 head(neutrophil.markers)
 
-dc.markers <- Seurat::FindConservedMarkers(sobj_spleen5, ident.1 = "Dendritic.cell", grouping.var = "Split", verbose = FALSE)
+dc.markers <- Seurat::FindConservedMarkers(sobj_spleen_split2, ident.1 = "Dendritic.cell", grouping.var = "Split", verbose = FALSE)
 head(dc.markers)
 
 # OR loop through seurat_clusters
 cons_markers <- list()
-Idents(sobj_spleen5) <- "seurat_clusters"
+#Idents(sobj_spleen_split2) <- "seurat_clusters"
 # careful with +1, remember the label is i-1 now
-for (i in 0:19) {
-  cons_markers[[i+1]] <- Seurat::FindConservedMarkers(sobj_spleen5, ident.1 = i, grouping.var = "Split", verbose = FALSE)
+# 
+for (i in 0:10) {
+  cons_markers[[i+1]] <- Seurat::FindConservedMarkers(sobj_spleen_split2, ident.1 = i, grouping.var = "Split", verbose = FALSE)
   head(cons_markers[[i+1]])
 }
 
-cons_markers[[3]]
+head(cons_markers[[3]])
 
 
 
-
-```
-```{r vignettedot}
-
-# NEEDS TO BE FIXED AND SET ORDER CORRECTLY
-Idents(sobj_spleen_split2) <- factor(Idents(sobj_spleen_split2), levels = c("pDC", "Eryth", "Mk", "DC", "CD14 Mono", "CD16 Mono",
-    "B Activated", "B", "CD8 T", "NK", "T activated", "CD4 Naive T", "CD4 Memory T"))
-
-markers.to.plot <- c("CD3D", "CREM", "HSPH1", "SELL", "GIMAP5", "CACYBP", "GNLY", "NKG7", "CCL5",
-    "CD8A", "MS4A1", "CD79A", "MIR155HG", "NME1", "FCGR3A", "VMO1", "CCL2", "S100A9", "HLA-DQA1",
-    "GPR183", "PPBP", "GNG11", "HBA2", "HBB", "TSPAN13", "IL3RA", "IGJ", "PRSS57")
-DotPlot(sobj_spleen_split2, features = markers.to.plot, cols = c("blue", "red"), dot.scale = 8, split.by = "stim") +
-    RotatedAxis()
 
 ```
 
@@ -1885,15 +1950,18 @@ Integration DotPlot
 
 ```{r integrationdotplot}
 # Set Idents
-Idents(sobj_spleen_split2) <- 'CellType_Integrated' # 'CellType_Integrated'
+#Idents(sobj_spleen_split2) <- 'CellType_Integrated' # 'CellType_Integrated'
+#Idents(sobj_spleen_split2) <- 'seurat_clusters'
 table(Idents(sobj_spleen_split2))
 clusters <- unique(Idents(sobj_spleen_split2))
 
 # Function to find top n markers for a specific cluster
+# First check for tiny clusters
+table(sobj_spleen_split2@meta.data$CellType_Integrated)
 n <- 15
 
 # Apply the function to all clusters and combine results
-top_markers <- map_dfr(clusters, get_top_markers, 15)
+top_markers <- map_dfr(clusters, get_top_markers, sobj = sobj_spleen_split2)
 
 table(top_markers$cluster)
 dim(top_markers) # 150 -> 91. 
@@ -1925,7 +1993,194 @@ DotPlot(sobj_spleen_split2, features = unique(markers_to_plot$gene)) +
 
 ggsave(paste0(results_dir, "/CellType_Integrated_DotPlot.png"), last_plot(), width = 12)
 
+
 ```
+
+# Featureplots
+
+```{r feature_ea}
+# show certain molecules on the umap
+
+
+# Generate feature plots for the selected features
+feature_plots <- lapply(genes_lineage, function(feature) {
+  FeaturePlot(sobj_spleen_split2, features = feature)
+})
+
+# Combine plots into a grid
+CombinePlots(plots = feature_plots, ncol = 3)
+
+FeaturePlot(sobj_spleen_split2, c("Foxp3", "Il2ra"))
+FeaturePlot(sobj_spleen_split2, c("Cd4", "Cd8a","Cd8b1", "Foxp3"))
+FeaturePlot(sobj_spleen_split2, c("Cd8a", "Cd8b1"))
+FeaturePlot(sobj_spleen_split2, c("Nkg7"))
+FeaturePlot(sobj_spleen_split2, c("Itgax")) # matches DC region
+FeaturePlot(sobj_spleen_split2, c("Itgam")) #, "C1qb", "Itgam"))
+
+FeaturePlot(sobj_spleen_split2, c("Igkc")) # Plasma
+FeaturePlot(sobj_spleen_split2, c("Mpo", "Elane", "Prtn3")) # Neutrophil 
+FeaturePlot(sobj_spleen_split2, c("Mpo", "Ly6g"))
+FeaturePlot(sobj_spleen_split2, c("Cd19"))
+FeaturePlot(sobj_spleen_split2, c("Cd3d", "Cd3e","Cd3g"))
+FeaturePlot(sobj_spleen_split2, c("C1qb", "C1qb","Selenop","Marco", "Cd68")) # monocyte
+FeaturePlot(sobj_spleen_split2, c("Clu", "Thbs1", "Myl9")) # macrophages
+
+
+FeaturePlot(sobj_spleen_split2, c("Cd14", "Ccr2", "Sell")) # Monocytes markers, but not found in specific regions
+FeaturePlot(sobj_spleen_split2, c("Cd163", "Cd68", "Mrc1"))
+
+FeaturePlot(sobj_spleen_split2, c("Hbb"))
+FeaturePlot(sobj_spleen_split2, c("Acta2", "Clu", "Tagln"))
+
+
+```
+
+
+
+
+```{r prettydotplot}
+
+# NEEDS TO BE FIXED AND SET ORDER CORRECTLY
+# get labels
+names(table(sobj_spleen5@meta.data$CellType_Integrated))
+
+# levels will be sorted in DotPlot bottom to top
+Idents(sobj_spleen_split2) <- factor(sobj_spleen_split2@meta.data$CellType_Integrated, levels = c(  "e","d","c", "b","a",  "Granulocyte", "Fibroblast", "Endothelial",  "Erythroid.Projenitor", "Macrophage", "Monocyte",  "Dendritic.cell", "Neutrophil" ,"T.cell" , "T.cell.CD8","Plasma","B.cell" ))
+table(Idents(sobj_spleen_split2))
+
+markers_to_plot$gene
+markers_to_not_plot <- c("Hba-a1/2", "Hbb", "Ighm", "Ctsw", "Scgb3a1","Igfbp5","Myh11", "Ybx3","Rgs1", "Tshz2", "Tm4sf1", "Fabp4","Igkc", "Igha", "Ighm", "Thbs2","Ctsw")
+markers_to_plot2 <- unlist(list(setdiff(markers_to_plot$gene, markers_to_not_plot)))
+markers_to_plot2
+
+# sorted 
+markers_to_plot3 <- c( "Ighd",  "Cd19","Jchain",   "Ighg1",   "Xbp1", 
+                      "Cd3d",    "Nkg7",    "Cd3e",    "Cd8a", "Lcn2",    "Ltf",    "S100a4",  "Itgax",  "C1qb",    "C1qa",    "C1qc",  "Selenop", 
+"Thbs1",   "Myl9",    "Hmgb2",   "Stmn1",   "Ube2c" ,  "Mt1" ,    "Top2a"  ,
+  "Acta2" ,  "Clu" ,    "Igfbp3" , "Tagln", "Mpo" ,"Elane",   "Prtn3")
+
+# non-unique values when setting 'row.names' means the Ident levels are off from the metadata col
+#DotPlot(sobj_spleen_split2, features = markers_to_plot3, dot.scale = 8) +
+#    RotatedAxis()
+
+
+DotPlot(sobj_spleen_split2, features = markers_to_plot3) +  
+  RotatedAxis() +
+  theme_minimal() + # Change to a minimal (white) background
+  theme(
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1), # Reduce font size and rotate x-axis labels
+    axis.text.y = element_text(size = 10), # Adjust y-axis font size if needed
+    panel.background = element_rect(fill = "white", color = NA), # Force white panel background
+    plot.background = element_rect(fill = "white", color = NA)  # Force white overall background
+    #panel.grid = element_blank() # Optional: remove grid lines if needed
+  ) +
+  ggtitle("Integrated Cell types top Log2FC")
+
+ggsave(paste0(results_dir, "/CellType_Integrated_DotPlot.png"), last_plot(), width = 8)
+
+```
+
+### Integration w Anchors
+
+```{r}
+
+# panc8 is a merged Seurat object containing 8 separate pancreas datasets
+# split the object by dataset
+# spleen.list <- SplitObject(sobj_spleen5, split.by = "Sample.ID")
+# 
+# # perform standard preprocessing on each object
+# for (i in 1:length(spleen.list)) {
+#   spleen.list[[i]] <- NormalizeData(spleen.list[[i]], verbose = FALSE)
+#   spleen.list[[i]] <- FindVariableFeatures(
+#     spleen.list[[i]], selection.method = "vst",
+#     nfeatures = 200, verbose = FALSE
+#   )
+# }
+# 
+# # find anchors
+# anchors <- FindIntegrationAnchors(object.list = spleen.list, anchor.features <- genes_cosMx_celltyping)
+# 
+# # integrate data
+# integrated <- IntegrateData(anchorset = anchors)
+
+
+```
+
+### or
+
+```{r integ35}
+# samples <- list(30,31, 32,33, 34, 35)  # Your Seurat objects
+# samples <- lapply(samples, function(x) {
+#     x <- NormalizeData(x)
+#     x <- FindVariableFeatures(x)
+#     return(x)
+# })
+# 
+# samples <- lapply(samples, function(x) {
+#     x <- ScaleData(x)
+#     x <- RunPCA(x)
+#     x <- FindNeighbors(x, dims = 1:30)
+#     x <- FindClusters(x, resolution = 0.5)
+#     return(x)
+# })
+# 
+# # Identify cluster markers
+# markers <- FindAllMarkers(sampleX, only.pos = TRUE)
+# 
+# # Annotate clusters manually based on known markers
+# cluster_annotations <- c("Cluster0" = "T cells", "Cluster1" = "B cells", ...)
+# sampleX$cell_type <- factor(cluster_annotations[sampleX$seurat_clusters])
+
+# endresult, AddMetaData(samplex, )
+
+
+```
+
+### CellType 35
+```{r}
+
+dim(sobj_spleen35)
+df_meta <- sobj_spleen35@meta.data
+
+# Cluster and all that 
+
+
+p <- my_dot_plot(sobj_spleen5, cluster_col='CellType_Label6', title='Title', results_dir, genes_cosMx_celltyping)
+p
+
+AddMetaData(sobj_spleen35, metadata = df_meta@CellType_BySample)
+
+```
+
+
+### Integration Celltype Aware
+```{r intcelltypes}
+
+# samples as list of sobj I assume
+# samples <- lapply(samples, function(x) {
+#     subset(x, subset = cell_type %in% c("T cells", "B cells", ...))
+# })
+# 
+# # Use cell type-informed variable features for integration:
+# features <- SelectIntegrationFeatures(object.list = samples)
+# samples <- lapply(samples, function(x) ScaleData(x, features = features))
+# samples <- lapply(samples, function(x) RunPCA(x, features = features))
+# anchors <- FindIntegrationAnchors(object.list = samples, anchor.features = features)
+# integrated <- IntegrateData(anchorset = anchors)
+# 
+# # proceed
+# integrated <- ScaleData(integrated)
+# integrated <- RunPCA(integrated)
+# integrated <- RunUMAP(integrated, dims = 1:30)
+# integrated <- FindNeighbors(integrated, dims = 1:30)
+# integrated <- FindClusters(integrated, resolution = 0.5)
+
+
+
+
+```
+
+
 
 
 ## InSituType
@@ -2177,24 +2432,48 @@ DimPlot(sobj_spleen5, reduction = "umap", group.by = "CellType_InSitu4", alpha=0
   ggtitle("InSituType4_monocytes")
 ```
 
+## FeaturePlots 
 ```{r}
+DimPlot(sobj_spleen_split2, reduction = "umap", group.by = c("CellType_Integrated"), cols=cols, label=TRUE)
+
+```
+
+
+
+```{r feature}
 # show certain molecules on the umap
+
 
 # Generate feature plots for the selected features
 feature_plots <- lapply(genes_lineage, function(feature) {
-  FeaturePlot(sobj_spleen5, features = feature)
+  FeaturePlot(sobj_spleen_split2, features = feature)
 })
 
 # Combine plots into a grid
 CombinePlots(plots = feature_plots, ncol = 3)
 
-FeaturePlot(sobj_spleen5, c("Foxp3", "Il2ra"))
-FeaturePlot(sobj_spleen5, c("Cd4", "Cd8a", "Foxp3"))
-FeaturePlot(sobj_spleen5, c("Itgax"))
-FeaturePlot(sobj_spleen5, c("Itgam")) #, "C1qb", "Itgam"))
+FeaturePlot(sobj_spleen_split2, c("Foxp3", "Il2ra"))
+FeaturePlot(sobj_spleen_split2, c("Cd4", "Cd8a","Cd8b1", "Foxp3"))
+FeaturePlot(sobj_spleen_split2, c("Cd8a", "Cd8b1"))
+FeaturePlot(sobj_spleen_split2, c("Nkg7"))
+FeaturePlot(sobj_spleen_split2, c("Itgax")) # matches DC region
+FeaturePlot(sobj_spleen_split2, c("Itgam")) #, "C1qb", "Itgam"))
 
-FeaturePlot(sobj_spleen5, c("Cd14", "Ccr2", "Sell")) # Monocytes
-FeaturePlot(sobj_spleen5, c("Cd163", "Cd68", "Mrc1"))
+FeaturePlot(sobj_spleen_split2, c("Igkc")) # Plasma
+FeaturePlot(sobj_spleen_split2, c("Mpo", "Elane", "Prtn3")) # Neutrophil 
+FeaturePlot(sobj_spleen_split2, c("Mpo"))
+FeaturePlot(sobj_spleen_split2, c("Cd19"))
+FeaturePlot(sobj_spleen_split2, c("Cd3d", "Cd3e","Cd3g"))
+FeaturePlot(sobj_spleen_split2, c("C1qb", "C1qb","Selenop","Marco", "Cd68"))
+
+
+FeaturePlot(sobj_spleen_split2, c("Cd14", "Ccr2", "Sell")) # Monocytes markers, but not found in specific regions
+FeaturePlot(sobj_spleen_split2, c("Cd163", "Cd68", "Mrc1"))
+
+FeaturePlot(sobj_spleen_split2, c("Ltf"))
+FeaturePlot(sobj_spleen_split2, c("Acta2", "Clu", "Tagln"))
+
+
 ```
 
 ## Spatial Celltype and Features
@@ -2244,20 +2523,23 @@ Make a dataframe of the summary counts by sample (not cell type dependent; just 
 #df_meta <- sobj_spleen_even@meta.data
 sobj_spleen30
 # count matrix need
-df_30 <- get_counts_subset_df(sobj_spleen30)
-df_31 <- get_counts_subset_df(sobj_spleen31)
-df_32 <- get_counts_subset_df(sobj_spleen32)
-df_34 <- get_counts_subset_df(sobj_spleen34)
-df_35 <- get_counts_subset_df(sobj_spleen35)
+df_30 <- get_counts_df(sobj_spleen30)
+df_31 <- get_counts_df(sobj_spleen31)
+df_32 <- get_counts_df(sobj_spleen32)
+df_33 <- get_counts_df(sobj_spleen33)
+df_34 <- get_counts_df(sobj_spleen34)
+df_35 <- get_counts_df(sobj_spleen35)
 dim(df_30)
 
 # Add phenotypes
 df_30$cell <- rownames(df_30)
 df_31$cell <- rownames(df_31)
 df_32$cell <- rownames(df_32)
+df_33$cell <- rownames(df_33)
 df_34$cell <- rownames(df_34)
 df_35$cell <- rownames(df_35)
 
+# expects 'CellType' to exist.
 df_30 <- df_30 %>%
   mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
   mutate(sen = ifelse(Cdkn1a > 0, 1, 0)) %>%
@@ -2280,6 +2562,14 @@ df_32 <- df_32 %>%
                          ifelse (prolif == 1, "prolif",
                                  ifelse(sen == 1, "sen", "neither"))))
 table(df_32$sen_pt)
+
+df_33 <- df_33 %>%
+  mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
+  mutate(sen = ifelse(Cdkn1a > 0, 1, 0)) %>%
+  mutate(sen_pt = ifelse(prolif == 1 & sen ==1, "both",
+                         ifelse (prolif == 1, "prolif",
+                                 ifelse(sen == 1, "sen", "neither"))))
+table(df_33$sen_pt)
 
 df_34 <- df_34 %>%
   mutate(prolif = ifelse(Pcna > 0 | Mki67 > 0, 1, 0)) %>%
@@ -2312,6 +2602,16 @@ df_30_summary$Sample.ID <- 30
 
 df_31 <- merge(df_31, df_cell_types, by="cell")
 df_32 <- merge(df_32, df_cell_types, by="cell")
+df_33 <- merge(df_33, df_cell_types, by="cell")
+
+df_31_summary <- df_31 %>%
+  group_by(sen_pt, CellType) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  #group_by(sen_pt) %>%
+  group_by(CellType) %>%
+  mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
+df_31_summary$Sample.ID <- 31
+
 dim(df_32)
 # celltype breakdown for each
 df_32_summary <- df_32 %>%
@@ -2323,6 +2623,16 @@ df_32_summary <- df_32 %>%
 # pct of the cell type in the PT (e.g. sen or prolif or both or neither)
 
 df_32_summary$Sample.ID <- 32
+
+df_33_summary <- df_33 %>%
+  group_by(sen_pt, CellType) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  #group_by(sen_pt) %>%
+  group_by(CellType) %>%
+  mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
+# pct of the cell type in the PT (e.g. sen or prolif or both or neither)
+df_33_summary$Sample.ID <- 33
+
 
 df_34 <- merge(df_34, df_cell_types, by="cell")
 dim(df_34)
@@ -2338,12 +2648,20 @@ df_34_summary <- df_34 %>%
 
 df_34_summary$Sample.ID <- 34
 
+df_35_summary <- df_35 %>%
+  group_by(sen_pt, CellType) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  #group_by(sen_pt) %>%
+  group_by(CellType) %>%
+  mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
+df_34_summary$Sample.ID <- 35
+
 # rbind
-df_spleen_sen_summary <- rbind(df_30_summary, df_32_summary, df_34_summary)
+df_spleen_sen_summary <- rbind(df_30_summary, df_31_summary, df_32_summary, df_34_summary, df_35_summary)
 df_spleen_sen_summary <- df_spleen_sen_summary %>%
   filter(count > 20) %>%
-  filter(CellType %in% c( "B.cell", "c", "Macrophage", "Monocyte","Plasma" ,         
-                          "Plasmablast" ,  "T.cell.CD4" , "T.cell.CD8","T.cell.regulatory"))
+  filter(CellType %in% c( "B.cell", "T.cell", "Macrophage", "Monocyte","Plasma" ,         
+                          "Dendritic.cell", "Neutrophil"))
 
 # pie plot for each sample
 df_spleen_sen_summary$sen_pt <- factor(df_spleen_sen_summary$sen_pt, levels = c("both", "prolif", "sen", "neither"))
@@ -2382,6 +2700,23 @@ num_cells_sensec30 <- df_30 %>%
 num_cells_sensec30
 tot_cells30 <- nrow(df_30)
 
+################
+num_cells_both31 <- df_31 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both31
+num_cells_prolif31 <- df_31 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif31
+num_cells_sensec31 <- df_31 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec31
+tot_cells31 <- nrow(df_31)
+
+##########
+
 num_cells_both32 <- df_32 %>%
   filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
   nrow()
@@ -2396,6 +2731,24 @@ num_cells_sensec32 <- df_32 %>%
   nrow()
 num_cells_sensec32
 tot_cells32 <- nrow(df_32)
+###############
+
+num_cells_both33 <- df_33 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both33
+
+num_cells_prolif33 <- df_33 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif33
+num_cells_sensec33 <- df_33 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec33
+tot_cells30 <- nrow(df_30)
+
+############
 
 num_cells_both34 <- df_34 %>%
   filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
@@ -2411,13 +2764,31 @@ num_cells_sensec34 <- df_34 %>%
   nrow()
 num_cells_sensec34
 tot_cells34 <- nrow(df_34)
+#############
+num_cells_both35 <- df_35 %>%
+  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+  nrow()
+num_cells_both35
+
+num_cells_prolif35 <- df_35 %>%
+  filter(Pcna > 0 | Mki67 > 0) %>%
+  nrow()
+num_cells_prolif35
+num_cells_sensec35 <- df_35 %>%
+  filter(Cdkn1a > 0) %>%
+  nrow()
+num_cells_sensec35
+tot_cells35 <- nrow(df_35)
+
+
 # need total cell counts by sample
 
 # put in a dataframe 
-sample.ids <- c(30,32,34)
-both_counts <- c(num_cells_both30, num_cells_both32, num_cells_both34)
-prolif_counts <- c(num_cells_prolif30, num_cells_prolif32, num_cells_prolif34)
-sene_counts <- c(num_cells_sensec30, num_cells_sensec32, num_cells_sensec34)
+sample.ids <- c(30,31,32,33,34,35)
+both_counts <- c(num_cells_both30, num_cells_both31, num_cells_both32, num_cells_both33,
+                 num_cells_both34, num_cells_both35)
+prolif_counts <- c(num_cells_prolif30, num_cells_prolif31, num_cells_prolif32, num_cells_prolif33, num_cells_prolif34, num_cells_prolif35)
+sene_counts <- c(num_cells_sensec30, num_cells_sensec31, num_cells_sensec32, num_cells_sensec33,  num_cells_sensec34, num_cells_sensec35)
 pt_df <- data.frame(sample.id = sample.ids, 
                     both = both_counts, 
                     prolif = prolif_counts, 
@@ -2561,6 +2932,47 @@ pt_df <- data.frame(sample.id = sample.ids,
                     sene = sene_counts)
 print(pt_df)
 ```
+
+
+```{r bootstrap}
+
+library(ggplot2)
+library(dplyr)
+
+# Assuming `df` is your dataframe with columns: percent_of_cells_positive, sample, condition
+
+bootstrap_ci <- function(data, n_bootstrap = 1000, ci = 0.95) {
+  boot_medians <- replicate(n_bootstrap, {
+    sample_medians <- sample(data$percent_of_cells_positive, replace = TRUE)
+    median(sample_medians)
+  })
+  quantile(boot_medians, probs = c((1 - ci) / 2, 1 - (1 - ci) / 2))
+}
+
+# Calculate median and CI for each condition
+summary_df <- df %>%
+  group_by(condition) %>%
+  summarise(
+    median = median(percent_of_cells_positive),
+    ci_lower = bootstrap_ci(cur_data(), 1000, 0.95)[1],
+    ci_upper = bootstrap_ci(cur_data(), 1000, 0.95)[2]
+  )
+
+# Plot
+ggplot(summary_df, aes(x = condition, y = median)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "Median Percent of Cells Positive with CI",
+    x = "Condition",
+    y = "Percent of Cells Positive"
+  )
+
+
+
+```
+
 
 ```{r countmatrices}
 
@@ -2944,3 +3356,14 @@ write.csv(df_dc_by_sample, paste0(results_dir, "/Dendritic_by_sample.csv"))
 write.csv(df_neut_by_sample, paste0(results_dir, "/Neutrophils_by_fov.csv"))
 
 ```
+
+
+```{r countmatrix}
+
+counts <- as.matrix(GetAssayData(sobj, assay="RNA", layer="counts"))
+data <- as.matrix(GetAssayData(sobj, assay="RNA", layer="data"))
+write.csv(as.matrix(counts), file = paste0(saved_rds_dir, "/count_matrix.csv"))
+
+
+```
+
