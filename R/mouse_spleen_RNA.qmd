@@ -270,7 +270,8 @@ mouseIO_colors <- c("#1b9e77", "#7570b3", "#e7298a", "tan", "#e6ab02",
                     "#b3cc1a", "#b3cc1a",
                     "lavender", "turquoise", "lightblue", "peachpuff", "lightyellow",
                     "#a65628", "lightyellow",  "limegreen", "#66a61e",
-                    "#984ea3", "grey50")
+                    "#984ea3", "grey50",
+                    "turquoise", "lightblue" ,"lavender","peachpuff")
 
 
 names(mouseIO_colors) <- c("B.cell", "Dendritic.cell", "Endothelial", 
@@ -283,7 +284,8 @@ names(mouseIO_colors) <- c("B.cell", "Dendritic.cell", "Endothelial",
                            "Macrophage/Monocytes", "Monocyte/Macrophage", 
                             "a","b","c","d", "e",
                            "NK.or.T.cell", "Basophil.like","B.cell.2","B.cell.3",
-                           "Granulocyte" , "ECM")
+                           "Granulocyte" , "ECM",
+                            "Plasmablast","Plasmacytoid.DC", "other.1", "other.2")
 
 
 # molecule colors #00ffff cyan, #ff0000 red, 
@@ -1329,27 +1331,27 @@ Feature Plots
 ```{r}
 
 # Feature Plots
-Idents(sobj_spleen5) <- "CellType_Label"
-ImageDimPlot(sobj_spleen5, fov="fov30", border.size = 0.1,
-             cols = 'polychrome',
+Idents(sobj_spleen_split2) <- "CellType_Integrated"
+ImageDimPlot(sobj_spleen_split2, fov="fov30", border.size = 0.1,
+             cols = mouseIO_colors,
              axes = TRUE,
              flip_xy = FALSE,
              coord.fixed=TRUE) 
 
-ImageDimPlot(sobj_spleen5, fov="fov31", border.size = 0.1,
-             cols = 'polychrome',
+ImageDimPlot(sobj_spleen_split2, fov="fov31", border.size = 0.1,
+             cols = mouseIO_colors,
              axes = TRUE,
              flip_xy = FALSE,
              coord.fixed=TRUE) 
 
-ImageDimPlot(sobj_spleen5, fov="fov32", border.size = 0.1,
-             cols = 'polychrome',
+ImageDimPlot(sobj_spleen_split2, fov="fov32", border.size = 0.1,
+             cols = mouseIO_colors,
              axes = TRUE,
              flip_xy = FALSE,
              coord.fixed=TRUE) 
 
-ImageDimPlot(sobj_spleen5, fov="fov34", border.size = 0.1,
-             cols = 'polychrome',
+ImageDimPlot(sobj_spleen_split2, fov="fov34", border.size = 0.1,
+             cols = mouseIO_colors,
              axes = TRUE,
              flip_xy = FALSE,
              coord.fixed=TRUE) 
@@ -1847,10 +1849,10 @@ df_meta <- df_meta %>%
     seurat_clusters  == 2 ~ "B.cell",
     seurat_clusters == 3 ~ "Monocyte", 
     seurat_clusters  == 4 ~ "Fibroblast", 
-    seurat_clusters  == 5 ~ "c", # ?
-    seurat_clusters == 6 ~ "a", # mostly sample 35 
-    seurat_clusters  == 7 ~ "b", # Platelets or basophiles
-    seurat_clusters  == 8 ~ "c", # Basophil.like",
+    seurat_clusters  == 5 ~ "Plasmacytoid.DC", # was c
+    seurat_clusters == 6 ~ "other.1", # mostly sample 35 
+    seurat_clusters  == 7 ~ "Plasmablast", # Platelets or basophiles
+    seurat_clusters  == 8 ~ "Plasmacytoid.DC", # Basophil.like",
     seurat_clusters == 9 ~ "Dendritic.cell",
     seurat_clusters  == 10 ~ "Erythroid.Projenitor",
     seurat_clusters  == 11 ~ "B.cell",
@@ -1858,10 +1860,10 @@ df_meta <- df_meta %>%
     seurat_clusters  == 13 ~ "Plasma",
     seurat_clusters  == 14 ~ "Granulocyte", # Granulocyte
     seurat_clusters  == 15 ~ "Macrophage",
-    seurat_clusters == 16 ~ "d",
-    seurat_clusters  == 17 ~ "d", # "Macrophage" had only 2,
-    seurat_clusters  == 18 ~ "d", # 2 cells only
-    seurat_clusters  == 19 ~ "d", # 2 cells only
+    seurat_clusters == 16 ~ "other.2",
+    seurat_clusters  == 17 ~ "other.2", # "Macrophage" had only 2,
+    seurat_clusters  == 18 ~ "other.2", # 2 cells only
+    seurat_clusters  == 19 ~ "other.2", # 2 cells only
     TRUE ~ "other" # Optional: handle unexpected values
   ))
 
@@ -1889,9 +1891,9 @@ Idents(sobj_spleen_split2) <- factor(sobj_spleen_split2@meta.data$CellType_Integ
                                        c("B.cell", "Plasma", "T.cell",
                                          "Neutrophil", "Dendritic.cell", "Macrophage", "Monocyte",
                                          "Erythroid.Projenitor", "Granulocyte", "Fibroblast",
-                                         "a","b","c","d","e"))
+                                         "other.1","Plasmablast","Plasmacytoid.DC","other.2","e"))
                                         
-DimPlot(sobj_spleen_split2, reduction = "umap", cols=cols, label=TRUE)                                                                            
+DimPlot(sobj_spleen_split2, reduction = "umap", cols=cols, label=FALSE)                                                                            
 
 ggsave(paste0(results_dir, "/Integrated_Umap_Labeled.png"), last_plot(), dpi=300)
 
@@ -2045,7 +2047,7 @@ FeaturePlot(sobj_spleen_split2, c("Acta2", "Clu", "Tagln"))
 names(table(sobj_spleen5@meta.data$CellType_Integrated))
 
 # levels will be sorted in DotPlot bottom to top
-Idents(sobj_spleen_split2) <- factor(sobj_spleen_split2@meta.data$CellType_Integrated, levels = c(  "e","d","c", "b","a",  "Granulocyte", "Fibroblast", "Endothelial",  "Erythroid.Projenitor", "Macrophage", "Monocyte",  "Dendritic.cell", "Neutrophil" ,"T.cell" , "T.cell.CD8","Plasma","B.cell" ))
+Idents(sobj_spleen_split2) <- factor(sobj_spleen_split2@meta.data$CellType_Integrated, levels = c(  "e","other.2","other.1", "Plasmablast","Plasmacytoid.DC", "Granulocyte", "Fibroblast", "Endothelial",  "Erythroid.Projenitor", "Macrophage", "Monocyte",  "Dendritic.cell", "Neutrophil" ,"T.cell" , "T.cell.CD8","Plasma","B.cell" ))
 table(Idents(sobj_spleen_split2))
 
 markers_to_plot$gene
@@ -2056,7 +2058,7 @@ markers_to_plot2
 # sorted 
 markers_to_plot3 <- c( "Ighd",  "Cd19","Jchain",   "Ighg1",   "Xbp1", 
                       "Cd3d",    "Nkg7",    "Cd3e",    "Cd8a", "Lcn2",    "Ltf",    "S100a4",  "Itgax",  "C1qb",    "C1qa",    "C1qc",  "Selenop", 
-"Thbs1",   "Myl9",    "Hmgb2",   "Stmn1",   "Ube2c" ,  "Mt1" ,    "Top2a"  ,
+"Thbs1",   "Myl9",    "Hmgb2",  "Ube2c" ,  "Mt1" ,    "Top2a"  ,
   "Acta2" ,  "Clu" ,    "Igfbp3" , "Tagln", "Mpo" ,"Elane",   "Prtn3")
 
 # non-unique values when setting 'row.names' means the Ident levels are off from the metadata col
@@ -2470,7 +2472,9 @@ FeaturePlot(sobj_spleen_split2, c("C1qb", "C1qb","Selenop","Marco", "Cd68"))
 FeaturePlot(sobj_spleen_split2, c("Cd14", "Ccr2", "Sell")) # Monocytes markers, but not found in specific regions
 FeaturePlot(sobj_spleen_split2, c("Cd163", "Cd68", "Mrc1"))
 
-FeaturePlot(sobj_spleen_split2, c("Ltf"))
+FeaturePlot(sobj_spleen_split2, c("Ccl5", "Cxcl13"))
+ggsave(paste0(results_dir, "/FeaturePlots_ccl5_cxcl13.png"), dpi=300, width=8, height=4)
+
 FeaturePlot(sobj_spleen_split2, c("Acta2", "Clu", "Tagln"))
 
 
@@ -2479,7 +2483,7 @@ FeaturePlot(sobj_spleen_split2, c("Acta2", "Clu", "Tagln"))
 ## Spatial Celltype and Features
 
 ```{r spatialfeature}
-Idents(sobj_spleen5) <- 'CellType_InSitu4'
+Idents(sobj_spleen5) <- 'CellType_Integrated'
 cells <- rownames(sobj_spleen5@meta.data)
 ImageDimPlot(sobj_spleen5, fov="fov34", flip_xy=FALSE, 
              border.size = 0.07,
@@ -2586,9 +2590,18 @@ df_35 <- df_35 %>%
                     ifelse(sen == 1, "sen", "neither"))))
 
 # add cell type to these, lookup for df_cell_types
+df_cell_types <- sobj_spleen_split2@meta.data[c("cell", "Sample.ID", "CellType_Integrated")]
+df_cell_types$CellType <- df_cell_types$CellType_Integrated
+
 df_30 <- merge(df_30, df_cell_types, by="cell")
 dim(df_30)
 table(df_30$CellType)
+df_31 <- merge(df_31, df_cell_types, by="cell")
+df_32 <- merge(df_32, df_cell_types, by="cell")
+df_33 <- merge(df_33, df_cell_types, by="cell")
+df_34 <- merge(df_34, df_cell_types, by="cell")
+dim(df_31)
+df_35 <- merge(df_35, df_cell_types, by="cell")
 
 # celltype breakdown for each
 df_30_summary <- df_30 %>%
@@ -2597,12 +2610,9 @@ df_30_summary <- df_30 %>%
   #group_by(sen_pt) %>%
   group_by(CellType) %>%
   mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
-
 df_30_summary$Sample.ID <- 30
 
-df_31 <- merge(df_31, df_cell_types, by="cell")
-df_32 <- merge(df_32, df_cell_types, by="cell")
-df_33 <- merge(df_33, df_cell_types, by="cell")
+
 
 df_31_summary <- df_31 %>%
   group_by(sen_pt, CellType) %>%
@@ -2621,7 +2631,6 @@ df_32_summary <- df_32 %>%
   group_by(CellType) %>%
   mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
 # pct of the cell type in the PT (e.g. sen or prolif or both or neither)
-
 df_32_summary$Sample.ID <- 32
 
 df_33_summary <- df_33 %>%
@@ -2634,9 +2643,6 @@ df_33_summary <- df_33 %>%
 df_33_summary$Sample.ID <- 33
 
 
-df_34 <- merge(df_34, df_cell_types, by="cell")
-dim(df_34)
-df_35 <- merge(df_35, df_cell_types, by="cell")
 
 # celltype breakdown for each
 df_34_summary <- df_34 %>%
@@ -2645,7 +2651,6 @@ df_34_summary <- df_34 %>%
   #group_by(sen_pt) %>%
   group_by(CellType) %>%
   mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
-
 df_34_summary$Sample.ID <- 34
 
 df_35_summary <- df_35 %>%
@@ -2654,7 +2659,7 @@ df_35_summary <- df_35 %>%
   #group_by(sen_pt) %>%
   group_by(CellType) %>%
   mutate(pct_celltype_inPT = (count / sum(count)) * 100) 
-df_34_summary$Sample.ID <- 35
+df_35_summary$Sample.ID <- 35
 
 # rbind
 df_spleen_sen_summary <- rbind(df_30_summary, df_31_summary, df_32_summary, df_34_summary, df_35_summary)
@@ -2808,11 +2813,7 @@ We have overall percent cells positive for a Sample, find representative fovs
 
 dim(df_30)
 
-parse_third_token <- function(string) {
-  # Split the string by underscores and extract the third token
-  tokens <- strsplit(string, "_")[[1]]
-  return(tokens[3])
-}
+
 
 # cells positive for each gene breakdown for each fov
 # df_30$fov <- sapply(df_30$cell, parse_third_token)
@@ -2831,27 +2832,33 @@ parse_third_token <- function(string) {
 
 df_30_fov <- get_fov_pcts(df_30, 30)
 df_30_sample <- get_sample_pcts(df_30, 30)
+df_31_fov <- get_fov_pcts(df_31, 31)
+df_31_sample <- get_sample_pcts(df_31, 31)
 
 df_32_fov <- get_fov_pcts(df_32, 32)
 df_32_sample <- get_sample_pcts(df_32, 32)
+df_33_fov <- get_fov_pcts(df_33, 33)
+df_33_sample <- get_sample_pcts(df_33, 33)
 
 df_34_fov <- get_fov_pcts(df_34, 34)
 df_34_sample <- get_sample_pcts(df_34, 34)
-
+df_35_fov <- get_fov_pcts(df_35, 35)
+df_35_sample <- get_sample_pcts(df_35, 35)
 
 # rbind
-df_genes_by_sample <- rbind(df_30_sample, df_32_sample, df_34_sample)
-df_fov_by_sample <- rbind(df_30_fov, df_32_fov, df_34_fov)
+df_genes_by_sample <- rbind(df_30_sample, df_31_sample, df_32_sample, df_33_sample, df_34_sample, df_35_sample)
+df_fov_by_sample <- rbind(df_30_fov,df_31_fov, df_32_fov, df_33_fov, df_34_fov, df_35_fov)
 write.csv(df_genes_by_sample, paste0(results_dir, "/key_genes_by_sample.csv"))
 write.csv(df_fov_by_sample, paste0(results_dir, "/key_genes_by_fov.csv"))
 
 
 
-df_spleen_sen_summary <- rbind(df_30_summary, df_32_summary, df_34_summary)
+df_spleen_sen_summary <- rbind(df_30_summary, df_31_summary, df_32_summary,df_33_summary, df_34_summary,
+                               df_35_summary)
 df_spleen_sen_summary <- df_spleen_sen_summary %>%
   filter(count > 20) %>%
-  filter(CellType %in% c( "B.cell", "c", "Macrophage", "Monocyte","Plasma" ,         
-                          "Plasmablast" ,  "T.cell.CD4" , "T.cell.CD8","T.cell.regulatory"))
+  filter(CellType %in% c( "B.cell",  "Macrophage", "Monocyte","Plasma" ,         
+                          "T.cell" , "Dendritic.cell", "Neutrophil", "Monocyte"))
 
 # pie plot for each sample
 df_spleen_sen_summary$sen_pt <- factor(df_spleen_sen_summary$sen_pt, levels = c("both", "prolif", "sen", "neither"))
@@ -2874,88 +2881,92 @@ ggplot(df_spleen_sen_summary, aes(x=sen_pt, y=pct_celltype_inPT, fill=CellType))
        x = "Phenotype")
 ggsave(paste0(results_dir, "/spleen_sen_pt_celltype_barplot.png"), width = 10, height = 6, dpi=300)
 
-# Filter columns based on the condition
-num_cells_both30 <- df_30 %>%
-  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
-  nrow()
-num_cells_both30
-
-num_cells_prolif30 <- df_30 %>%
-  filter(Pcna > 0 | Mki67 > 0) %>%
-  nrow()
-num_cells_prolif30
-num_cells_sensec30 <- df_30 %>%
-  filter(Cdkn1a > 0) %>%
-  nrow()
-num_cells_sensec30
-tot_cells30 <- nrow(df_30)
-
-num_cells_both32 <- df_32 %>%
-  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
-  nrow()
-num_cells_both32
-
-num_cells_prolif32 <- df_32 %>%
-  filter(Pcna > 0 | Mki67 > 0) %>%
-  nrow()
-num_cells_prolif32
-num_cells_sensec32 <- df_32 %>%
-  filter(Cdkn1a > 0) %>%
-  nrow()
-num_cells_sensec32
-tot_cells32 <- nrow(df_32)
-
-num_cells_both34 <- df_34 %>%
-  filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
-  nrow()
-num_cells_both34
-
-num_cells_prolif34 <- df_34 %>%
-  filter(Pcna > 0 | Mki67 > 0) %>%
-  nrow()
-num_cells_prolif34
-num_cells_sensec34 <- df_34 %>%
-  filter(Cdkn1a > 0) %>%
-  nrow()
-num_cells_sensec34
-tot_cells34 <- nrow(df_34)
-# need total cell counts by sample
-
-# put in a dataframe 
-sample.ids <- c(30,32,34)
-both_counts <- c(num_cells_both30, num_cells_both32, num_cells_both34)
-prolif_counts <- c(num_cells_prolif30, num_cells_prolif32, num_cells_prolif34)
-sene_counts <- c(num_cells_sensec30, num_cells_sensec32, num_cells_sensec34)
-pt_df <- data.frame(sample.id = sample.ids, 
-                    both = both_counts, 
-                    prolif = prolif_counts, 
-                    sene = sene_counts)
-print(pt_df)
+# # Filter columns based on the condition
+# num_cells_both30 <- df_30 %>%
+#   filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+#   nrow()
+# num_cells_both30
+# 
+# num_cells_prolif30 <- df_30 %>%
+#   filter(Pcna > 0 | Mki67 > 0) %>%
+#   nrow()
+# num_cells_prolif30
+# num_cells_sensec30 <- df_30 %>%
+#   filter(Cdkn1a > 0) %>%
+#   nrow()
+# num_cells_sensec30
+# tot_cells30 <- nrow(df_30)
+# 
+# num_cells_both32 <- df_32 %>%
+#   filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+#   nrow()
+# num_cells_both32
+# 
+# num_cells_prolif32 <- df_32 %>%
+#   filter(Pcna > 0 | Mki67 > 0) %>%
+#   nrow()
+# num_cells_prolif32
+# num_cells_sensec32 <- df_32 %>%
+#   filter(Cdkn1a > 0) %>%
+#   nrow()
+# num_cells_sensec32
+# tot_cells32 <- nrow(df_32)
+# 
+# num_cells_both34 <- df_34 %>%
+#   filter((Pcna > 0 | Mki67 > 0) & Cdkn1a > 0) %>%
+#   nrow()
+# num_cells_both34
+# 
+# num_cells_prolif34 <- df_34 %>%
+#   filter(Pcna > 0 | Mki67 > 0) %>%
+#   nrow()
+# num_cells_prolif34
+# num_cells_sensec34 <- df_34 %>%
+#   filter(Cdkn1a > 0) %>%
+#   nrow()
+# num_cells_sensec34
+# tot_cells34 <- nrow(df_34)
+# # need total cell counts by sample
+# 
+# # put in a dataframe 
+# sample.ids <- c(30,32,34)
+# both_counts <- c(num_cells_both30, num_cells_both32, num_cells_both34)
+# prolif_counts <- c(num_cells_prolif30, num_cells_prolif32, num_cells_prolif34)
+# sene_counts <- c(num_cells_sensec30, num_cells_sensec32, num_cells_sensec34)
+# pt_df <- data.frame(sample.id = sample.ids, 
+#                     both = both_counts, 
+#                     prolif = prolif_counts, 
+#                     sene = sene_counts)
+# print(pt_df)
 ```
 
+## Bootstrap 
 
 ```{r bootstrap}
 
-library(ggplot2)
-library(dplyr)
+# example for cdkn1a gene, sample 30
+df <- df_30 %>%
+  dplyr::select(c("Sample.ID", "Cdkn1a"))
+
+
 
 # Assuming `df` is your dataframe with columns: percent_of_cells_positive, sample, condition
 
 bootstrap_ci <- function(data, n_bootstrap = 1000, ci = 0.95) {
-  boot_medians <- replicate(n_bootstrap, {
-    sample_medians <- sample(data$percent_of_cells_positive, replace = TRUE)
-    median(sample_medians)
+  boot_means <- replicate(n_bootstrap, {
+    sample_counts <- sample(data$Cdkn1a, size=500, replace = TRUE)
+    pct_non_zero <- pct_non_zero(sample_counts)
   })
-  quantile(boot_medians, probs = c((1 - ci) / 2, 1 - (1 - ci) / 2))
+  quantile(pct_non_zero, probs = c((1 - ci) / 2, 1 - (1 - ci) / 2))
 }
 
 # Calculate median and CI for each condition
 summary_df <- df %>%
-  group_by(condition) %>%
+  group_by(Sample.ID) %>%
   summarise(
-    median = median(percent_of_cells_positive),
-    ci_lower = bootstrap_ci(cur_data(), 1000, 0.95)[1],
-    ci_upper = bootstrap_ci(cur_data(), 1000, 0.95)[2]
+    means = mean(pct_non_zero(Cdkn1a))
+    #ci_lower = bootstrap_ci(cur_data(), 500, 0.95)[1],
+    #ci_upper = bootstrap_ci(cur_data(), 500, 0.95)[2]
   )
 
 # Plot
@@ -2976,8 +2987,8 @@ ggplot(summary_df, aes(x = condition, y = median)) +
 
 ```{r countmatrices}
 
-exp_data <- as.matrix(GetAssayData(sobj_spleen5, assay="RNA", layer="counts"))
-norm_exp_data <- as.matrix(GetAssayData(sobj_spleen5, assay="RNA", layer="data"))
+exp_data <- as.matrix(GetAssayData(sobj_spleen_split2, assay="RNA", layer="counts"))
+norm_exp_data <- as.matrix(GetAssayData(sobj_spleen_split2, assay="RNA", layer="data"))
 class(exp_data)
 dim(exp_data) # 1000 x 191K
 # how to subset matrix by gene
@@ -3124,7 +3135,7 @@ df_gene_stats3 <- merge(df_gene_stats3, df_sample[,c("Sample.ID", "Sample.Nm", "
 head(df_gene_stats3)
 
 
-write.csv(df_gene_stats3, paste0(results_dir, "/df_gene_stats_spleen_even.csv"), row.names = FALSE)
+write.csv(df_gene_stats3, paste0(results_dir, "/geneOfInterest_stats_spleen.csv"), row.names = FALSE)
 
 
 ```
@@ -3140,83 +3151,242 @@ print("Barplots placeholder")
 Crop FOVs using bounding boxes of sample extents for Spatial rendering of multiple molecules per TMA sample. This is an alternate method to subsetting the object by sample number, and may result in trimmer plots.
 
 ```{r crop}
-ImageDimPlot(sobj_spleen5, fov="Sabaawynewcore091320245", axes=TRUE, flip_xy =FALSE )
+
+Idents(sobj_spleen_split2) <- "CellType_Integrated"
+ImageDimPlot(sobj_spleen_split2, fov="Sabaawynewcore091320245", axes=TRUE, flip_xy =FALSE,
+             cols=mouseIO_colors)
+ggsave(paste0(results_dir, "/Spatial_Spleen_all.png"), last_plot(), dpi=300, width=12)
 
 #######################
 # Define fovs, needed for spatial plots of molecules. 
 # fov30 
 # fov31, etc. 
-df_meta <- sobj_spleen5@meta.data
+df_meta <- sobj_spleen_split2@meta.data
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 30)
 bbox_mtx
 # BUG: The y and x coords are flipped in the Crop function
-cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj_spleen5[["fov30"]] <- cropped.coords
+sobj_spleen_split2[["fov30"]] <- cropped.coords
 # do we have the right subregion?
 
-ImageDimPlot(sobj_spleen5, fov="fov30", axes=TRUE, flip_xy=FALSE)
+DefaultBoundary(sobj_spleen_split2[["fov30"]]) <- "segmentation"
+ImageDimPlot(sobj_spleen_split2, fov="fov30", axes=TRUE, flip_xy=FALSE, border.size=0.01, cols=mouseIO_colors)
+ggsave(paste0(results_dir, "/Spatial_Spleen_30.png"), last_plot(), dpi=300, width=8)
 
 # fov31
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 31)
 bbox_mtx
-cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj_spleen5[["fov31"]] <- cropped.coords
+sobj_spleen_split2[["fov31"]] <- cropped.coords
 # fov32
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 32)
 bbox_mtx
-cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj_spleen5[["fov32"]] <- cropped.coords
+#ImageDimPlot(sobj_spleen_split2, fov="fov31", axes=TRUE, flip_xy=FALSE, cols=mouseIO_colors)
+#ggsave(paste0(results_dir, "/Spatial_Spleen_31.png"), last_plot(), dpi=300, width=8)
+
+sobj_spleen_split2[["fov32"]] <- cropped.coords
 # fov34
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 34)
 bbox_mtx
-cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj_spleen5[["fov34"]] <- cropped.coords
+DefaultBoundary(sobj_spleen_split2[["fov32"]]) <- "segmentation"
+ImageDimPlot(sobj_spleen_split2, fov="fov32", axes=TRUE, flip_xy=FALSE, border.size=0.01, cols=mouseIO_colors)
+ggsave(paste0(results_dir, "/Spatial_Spleen_32.png"), last_plot(), dpi=300, width=8)
+
+sobj_spleen_split2[["fov34"]] <- cropped.coords
+DefaultBoundary(sobj_spleen_split2[["fov34"]]) <- "segmentation"
+ImageDimPlot(sobj_spleen_split2, fov="fov34", axes=TRUE, flip_xy=FALSE, border.size=0.01, cols=mouseIO_colors)
+ggsave(paste0(results_dir, "/Spatial_Spleen_34.png"), last_plot(), dpi=300, width=8)
+
 # fov35
 bbox_mtx <- get_bbox_of_sample(df_meta, "Sabaawy new core 09/13/2024 5", 35)
 bbox_mtx
-cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
-sobj_spleen5[["fov35"]] <- cropped.coords
+sobj_spleen_split2[["fov35"]] <- cropped.coords
 
-DefaultBoundary(sobj_spleen5[["fov30"]]) <- "segmentation"
-DefaultBoundary(sobj_spleen5[["fov31"]]) <- "segmentation" # "segmentation" or "centroids" # sets cell segmentation outline
-DefaultBoundary(sobj_spleen5[["fov32"]]) <- "segmentation" # sets cell segmentation outline
-DefaultBoundary(sobj_spleen5[["fov34"]]) <- "segmentation" # sets cell segmentation outline
-DefaultBoundary(sobj_spleen5[["fov35"]]) <- "segmentation"
+
+
+DefaultBoundary(sobj_spleen_split2[["fov31"]]) <- "segmentation" # "segmentation" or "centroids" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen_split2[["fov32"]]) <- "segmentation" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen_split2[["fov34"]]) <- "segmentation" # sets cell segmentation outline
+DefaultBoundary(sobj_spleen_split2[["fov35"]]) <- "segmentation"
+
+
+```
+## Plot spatial fov
+
+
+```{r spatial30}
+
+# for fov or subset, e.g. fov 285, show celltypes and molecules
+# fov34
+fov_num <- 254
+
+plot_fov_w_markers <- function(sobj, fov, mols, mol.colors, title) {
+    
+  # 
+  df_meta <- sobj@meta.data
+  bbox_mtx <- get_bbox_of_fov(df_meta, "Sabaawy new core 09/13/2024 5", fov_num)
+  bbox_mtx
+  
+  cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], 
+                         y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+  fov_name <- paste0("fov", fov_num)
+  sobj_spleen_split2[[fov_name]] <- cropped.coords
+  DefaultBoundary(sobj[[fov_name]]) <- "segmentation" 
+  
+  # Workaround: sobj_spleen_split2 is having issues plotting molecules, "coordinate system" error. 
+  # However, sobj_spleen (pre Integration) has cell types loaded. 
+  Idents(sobj) <- "CellType_Integrated"
+  table(Idents(sobj))
+  p <- ImageDimPlot(sobj, fov=fov_name, axes=TRUE, 
+               molecules= mols, 
+               mols.cols = mol.colors,
+               mols.size = 0.3,
+               alpha = 1,
+               border.size = 0.1,
+               coord.fixed=TRUE,
+               flip_xy = FALSE, 
+               cols=mouseIO_colors) +
+    ggtitle(title)
+  p  
+  ggsave(paste0(results_dir, "/SpatialFov_",fov_num,"_", title,".png"), p, dpi=600, height=8)
+  
+  return(p)
+}
+
+p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Cdkn1a","Lmna", "Mki67"), c("blue", "red", "magenta"), "34Hom_Sene")
+p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Cdkn1a"), c("blue"), "34Hom_Cdkn1a")
+p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Lmna"), c("red"), "34Hom_Lmna")
+p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Mki67"), c("magenta"), "34Hom_Mki67")
 
 
 ```
 
-```{r spatial}
+
+
+### Zoom
+Note: an fov is 510 um x 510 um and 4225 pixels x 4225 pixels.
+Therefore, a 50 um scale bar should be about 400 pixels across.  If zoom is 1000 px ^2, 
+plan for a scale bar 4/10 of the width = 50 um
+```{r zoom254}
+# square 1000 x 1000 from min (x,y)
+fov_num <- 254
+
+### SET THESE based of FOV plot above 
+# fov254 (sample 34) to get both: x_min: 24500 y_min: 62500 (used)
+# fov285 (sample 30) x_min: 92900 y_min: 57100
+x_min <- 24500
+y_min <- 62500
+
+
+plot_zoom <- function(sobj, fov, x, y, mols, mol.colors, title) {
+
+  size <- 1000
+  x_max <- x_min + size
+  y_max <- y_min + size
+  print(paste(y_min, y_max, x_min, x_max))
+  
+  #sobj_fov <- subset(sobj, subset = Sample.ID %in% sample_ids )
+  # Create a 2x2 matrix
+  bbox_mtx <- matrix(c(y_min, y_max, x_min, x_max), nrow = 2, byrow = TRUE,
+                         dimnames = list(c("y", "x"), c("min", "max")))
+  
+  #bbox_mtx <- get_bbox_from_corner(df_meta, "Sabaawy new core 09/13/2024 5", fov_num)
+  bbox_mtx
+  cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], 
+                         y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+  zoom_name <- paste0("zoom", fov_num)
+  sobj[[zoom_name]] <- cropped.coords
+  DefaultBoundary(sobj[[zoom_name]]) <- "segmentation" 
+  
+  # ccl5 
+  #molcols = c("#f781bf") # Ccl5
+  # Define the desired x range per inch
+  x_range_per_inch <- 200  # Example: 200 x units per inch
+  # Calculate aspect ratio based on plot dimensions
+  # Suppose we know the plot width in inches (e.g., 6 inches)
+  plot_width_in_inches <- 6
+  total_x_range <- 1000  # The full x range in the data
+  aspect_ratio <- (total_x_range / plot_width_in_inches) / x_range_per_inch
+  
+  p <- ImageDimPlot(sobj, fov=zoom_name, axes=TRUE, 
+               molecules= mols, 
+               mols.cols = mol.colors,
+               mols.size = 1.0,
+               flip_xy = FALSE,
+               alpha=1.0,
+               crop = FALSE,
+               coord.fixed=TRUE,
+               cols=mouseIO_colors ) +
+    #coord_fixed(ratio = 1) +
+    #theme(aspect.ratio = aspect_ratio) +
+    scale_x_continuous(limits = c(y_min, y_max)) +
+    scale_y_continuous(limits = c(x_min, x_max)) +
+    ggtitle("Sample 34 Hom") 
+    
+  ggsave(paste0(results_dir, "/SpatialFov_",fov_num,"_", title, "_zoom.png"), last_plot(), dpi=300, height=8)
+  
+  return(p)
+  
+}
+
+
+p <- plot_zoom(sobj_spleen_split2, fov_num, x_min, y_min, mols = c("Cdkn1a"), mol.colors=c("blue"), title="Sample30_P21" )
+
+```
+
+```{r spatialWT}
 
 # for fov or subset, e.g. fov 285, show celltypes and molecules
 # fov34
 fov_num <- 285
 # 
+df_meta <- sobj_spleen_split2@meta.data
 bbox_mtx <- get_bbox_of_fov(df_meta, "Sabaawy new core 09/13/2024 5", fov_num)
 bbox_mtx
-cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
 fov_name <- paste0("fov", fov_num)
-sobj_spleen5[[fov_name]] <- cropped.coords
-DefaultBoundary(sobj_spleen5[[fov_name]]) <- "segmentation" 
+sobj_spleen_split2[["fov285"]] <- cropped.coords
+DefaultBoundary(sobj_spleen_split2[[fov_name]]) <- "segmentation" 
 
-ImageDimPlot(sobj_spleen5, fov="fov285", axes=TRUE, molecules= "Mki67", flip_xy = FALSE) #dark.background = FALSE)
-
+# Workaround: sobj_spleen_split2 is having issues plotting molecules, "coordinate system" error. 
+# However, sobj_spleen (pre Integration) has cell types loaded. 
+Idents(sobj_spleen_split2) <- "CellType_Integrated"
+table(Idents(sobj_spleen_split2))
+p <- ImageDimPlot(sobj_spleen_split2, fov=fov_name, axes=TRUE, 
+             molecules= c("Ccl5", "Cxcl13"), 
+             mols.cols = c("cyan", "blue"),
+             mols.size = 0.3,
+             alpha = 1,
+             border.size = 0.1,
+             coord.fixed=TRUE,
+             flip_xy = FALSE, 
+             cols=mouseIO_colors) +
+  ggtitle("Sample 30 WT")
+p  
+ggsave(paste0(results_dir, "/SpatialFov_",fov_num,"_Sample30_fov285.png"), p, dpi=300, height=8)
 
 ```
 
-### Zoom
 
-```{r}
+```{r zoom285}
 # square 1000 x 1000 from min (x,y)
-fov <- 285
-x_min <- 93000
-y_min <- 56600
+fov_num <- 285
+
+### SET THESE based of FOV plot above 
+# fov254 (sample 34) to get both: x_min: 24500 y_min: 62500 (used)
+# fov285 (sample 30) x_min: 92900 y_min: 57500
+x_min <- 92900
+y_min <- 57500
   size <- 1000
   x_max <- x_min + size
   y_max <- y_min + size
@@ -3229,20 +3399,91 @@ y_min <- 56600
 
 #bbox_mtx <- get_bbox_from_corner(df_meta, "Sabaawy new core 09/13/2024 5", fov_num)
 bbox_mtx
-cropped.coords <- Crop(sobj_spleen5[["Sabaawynewcore091320245"]], 
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
                        y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
 zoom_name <- paste0("zoom", fov_num)
-sobj_spleen5[[zoom_name]] <- cropped.coords
-DefaultBoundary(sobj_spleen5[[zoom_name]]) <- "segmentation" 
+sobj_spleen_split2[[zoom_name]] <- cropped.coords
+DefaultBoundary(sobj_spleen_split2[[zoom_name]]) <- "segmentation" 
 
-cols <- c("red", "blue", "pink", "green", "purple")
-ImageDimPlot(sobj_spleen5, fov="zoom285", axes=TRUE, 
-             molecules= c("Cdkna1","Mki67","Lmna", "Ccl5","Cxcl13"), 
-             mols.size = 2.0,
-             flip_xy = FALSE) #dark.background = FALSE)
+# ccl5 
+#molcols = c("#f781bf") # Ccl5
+# Define the desired x range per inch
+x_range_per_inch <- 200  # Example: 200 x units per inch
+# Calculate aspect ratio based on plot dimensions
+# Suppose we know the plot width in inches (e.g., 6 inches)
+plot_width_in_inches <- 6
+total_x_range <- 1000  # The full x range in the data
+aspect_ratio <- (total_x_range / plot_width_in_inches) / x_range_per_inch
+
+
+p285 <- ImageDimPlot(sobj_spleen_split2, fov=zoom_name, axes=TRUE, 
+             molecules= c("Ccl5", "Cxcl13"), 
+             mols.cols = c("cyan", "blue"),
+             mols.size = 1.0,
+             flip_xy = FALSE,
+             alpha=1.0,
+             crop = FALSE,
+             coord.fixed=TRUE,
+             cols=mouseIO_colors ) +
+  #coord_fixed(ratio = 1) +
+    #theme(aspect.ratio = aspect_ratio) +
+  scale_x_continuous(limits = c(y_min, y_max)) +
+  scale_y_continuous(limits = c(x_min, x_max)) +
+  
+  ggtitle("Sample 30 WT")
+
+p285
+
+ggsave(paste0(results_dir, "/SpatialFov_",fov_num,"_Sample30_Ccl5_Cxcl13_zoom.png"), last_plot(), dpi=300, height=8)
+
+```
+
+```{r}
+
+library(patchwork)
+p285 + p254
+
+ggsave(paste0(results_dir, "/SpatialFov_",fov_num,"_TwoSamples_Ccl5_Cxcl13_zoom.png"), last_plot(), dpi=300, height=6, width=16)
 
 
 ```
+
+```{r}
+
+# for fov or subset, e.g. fov 285, show celltypes and molecules
+# fov34
+fov_num <- 268
+# 
+df_meta <- sobj_spleen_split2@meta.data
+bbox_mtx <- get_bbox_of_fov(df_meta, "Sabaawy new core 09/13/2024 5", fov_num)
+bbox_mtx
+
+cropped.coords <- Crop(sobj_spleen_split2[["Sabaawynewcore091320245"]], 
+                       y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
+fov_name <- paste0("fov", fov_num)
+sobj_spleen_split2[["fov268"]] <- cropped.coords
+DefaultBoundary(sobj_spleen_split2[[fov_name]]) <- "segmentation" 
+
+# Workaround: sobj_spleen_split2 is having issues plotting molecules, "coordinate system" error. 
+# However, sobj_spleen (pre Integration) has cell types loaded. 
+Idents(sobj_spleen_split2) <- "CellType_Integrated"
+table(Idents(sobj_spleen_split2))
+p <- ImageDimPlot(sobj_spleen_split2, fov=fov_name, axes=TRUE, 
+             molecules= c("Cdkn1a", "Lmna", "Mki67"), 
+             mols.cols = c("lightblue", "red", "pink"),
+             mols.size = 1,
+             alpha = 1,
+             border.size = 0.1,
+             coord.fixed=TRUE,
+             flip_xy = FALSE, 
+             cols=mouseIO_colors) +
+  ggtitle("Sample 32 Het")
+p  
+
+ggsave(paste0(results_dir, "/SpatialFov_",fov_num,"_Samp32_Sene_fov268.png"), p, dpi=300, height=8)
+
+```
+
 
 ```{r}
 Idents(sobj_spleen5) <- "seurat_cluster.5"
@@ -3254,7 +3495,7 @@ ImageDimPlot(sobj_spleen5, fov="fov30", axes=TRUE, flip_xy=FALSE, molecules= "Mk
 
 ```
 
-### CellType-Marker Counts
+## CellType-Marker Counts
 
 Downstream of Celltyping, write raw data for CellType, marker combinations by fov
 
@@ -3267,10 +3508,10 @@ Leveraging our sample dataframe(s) of cell/gene matrices, re-aggregate for Dendr
 head(df_30)
 
 # extract fov from cell id
-df_30$fov <- sapply(df_30$cell, parse_third_token)
+#df_30$fov <- sapply(df_30$cell, parse_third_token)
 # add cell types 
-head(df_cell_types)
-df_ct30 <- merge(df_30, df_cell_types, by="cell")
+#head(df_cell_types)
+#df_ct30 <- merge(df_30, df_cell_types, by="cell")
 
 cell_type <- 'Neutrophil'
 marker_name <- 'Ccl5'
@@ -3279,38 +3520,43 @@ sample_id <- 32
 
 
 df_30$fov <- sapply(df_30$cell, parse_third_token)
-df_ct30 <- merge(df_30, df_cell_types, by="cell")
+#df_ct30 <- merge(df_30, df_cell_types, by="cell")
 colnames(df_ct30)[1000:1020]
-df_30_ct_neut <- get_pct_fov_celltype(df_ct30, 30, 'Neutrophil', 'Ccl5')
-df_30_ct_dc <- get_pct_fov_celltype(df_ct30, 30, 'Dendritic.cell', 'Cxcl13')
+df_30_ct_neut <- get_pct_fov_celltype(df_30, 30, 'Neutrophil', 'Ccl5')
+df_30_ct_dc <- get_pct_fov_celltype(df_30, 30, 'Dendritic.cell', 'Cxcl13')
 df_30_ct_neut
 df_30_ct_dc
 
-df_30_ct_test <- get_pct_fov_celltype(df_ct30, 30, 'Dendritic.cell', 'Ccl5')
+df_30_ct_test <- get_pct_fov_celltype(df_30, 30, 'Dendritic.cell', 'Ccl5')
 df_30_ct_test
 
 # Repeat for each Sample ID
 # merge first
 df_31$fov <- sapply(df_31$cell, parse_third_token)
-df_ct31 <- merge(df_31, df_cell_types, by="cell")
+#df_ct31 <- merge(df_31, df_cell_types, by="cell")
 
-df_31_ct_neut <- get_pct_fov_celltype(df_ct31, 31, 'Neutrophil', 'Ccl5')
-df_31_ct_dc <- get_pct_fov_celltype(df_ct31, 31, 'Dendritic.cell', 'Cxcl13')
+df_31_ct_neut <- get_pct_fov_celltype(df_31, 31, 'Neutrophil', 'Ccl5')
+df_31_ct_dc <- get_pct_fov_celltype(df_31, 31, 'Dendritic.cell', 'Cxcl13')
 
 df_32$fov <- sapply(df_32$cell, parse_third_token)
-df_ct32 <- merge(df_32, df_cell_types, by="cell")
-df_32_ct_neut <- get_pct_fov_celltype(df_ct32, 32, 'Neutrophil', 'Ccl5')
-df_32_ct_dc <- get_pct_fov_celltype(df_ct32, 32, 'Dendritic.cell', 'Cxcl13')
+#df_ct32 <- merge(df_32, df_cell_types, by="cell")
+df_32_ct_neut <- get_pct_fov_celltype(df_32, 32, 'Neutrophil', 'Ccl5')
+df_32_ct_dc <- get_pct_fov_celltype(df_32, 32, 'Dendritic.cell', 'Cxcl13')
+
+df_33$fov <- sapply(df_33$cell, parse_third_token)
+#df_ct32 <- merge(df_32, df_cell_types, by="cell")
+df_33_ct_neut <- get_pct_fov_celltype(df_33, 33, 'Neutrophil', 'Ccl5')
+df_33_ct_dc <- get_pct_fov_celltype(df_33, 33, 'Dendritic.cell', 'Cxcl13')
 
 df_34$fov <- sapply(df_34$cell, parse_third_token)
-df_ct34 <- merge(df_34, df_cell_types, by="cell")
-df_34_ct_neut <- get_pct_fov_celltype(df_ct34, 34, 'Neutrophil', 'Ccl5')
-df_34_ct_dc <- get_pct_fov_celltype(df_ct34, 34, 'Dendritic.cell', 'Cxcl13')
+#df_ct34 <- merge(df_34, df_cell_types, by="cell")
+df_34_ct_neut <- get_pct_fov_celltype(df_34, 34, 'Neutrophil', 'Ccl5')
+df_34_ct_dc <- get_pct_fov_celltype(df_34, 34, 'Dendritic.cell', 'Cxcl13')
 
 df_35$fov <- sapply(df_35$cell, parse_third_token)
-df_ct35 <- merge(df_35, df_cell_types, by="cell")
-df_35_ct_neut <- get_pct_fov_celltype(df_ct35, 35, 'Neutrophil', 'Ccl5')
-df_35_ct_dc <- get_pct_fov_celltype(df_ct35, 35, 'Dendritic.cell', 'Cxcl13')
+#df_ct35 <- merge(df_35, df_cell_types, by="cell")
+df_35_ct_neut <- get_pct_fov_celltype(df_35, 35, 'Neutrophil', 'Ccl5')
+df_35_ct_dc <- get_pct_fov_celltype(df_35, 35, 'Dendritic.cell', 'Cxcl13')
 df_35_ct_neut
 df_35_ct_dc
 
@@ -3322,48 +3568,124 @@ Compile the Sample stats on our gene and celltype of interest. Dendritic.cell wi
 #| echo: false
 #| message: false
 #| warning: false
-df_genes_by_dc_by_fov <- rbind(df_30_ct_dc, df_31_ct_dc, df_32_ct_dc, df_34_ct_dc, df_35_ct_dc)
-df_genes_by_neut_by_fov <- rbind(df_30_ct_neut, df_31_ct_neut, df_32_ct_neut, df_34_ct_neut, df_35_ct_neut)
+df_genes_by_dc_by_fov <- rbind(df_30_ct_dc, df_31_ct_dc, df_32_ct_dc, df_33_ct_dc, df_34_ct_dc, df_35_ct_dc)
+df_genes_by_neut_by_fov <- rbind(df_30_ct_neut, df_31_ct_neut, df_32_ct_neut, df_33_ct_neut, df_34_ct_neut, df_35_ct_neut)
 
 write.csv(df_genes_by_dc_by_fov, paste0(results_dir, "/cxcl13_dcs_byfov.csv"))
 write.csv(df_genes_by_neut_by_fov, paste0(results_dir, "/ccl5_neut_byfov.csv"))
 
 ```
 
+## CellType Percents 
 Overall Sample Summaries for DCs (Cxcl13) and Neutrophils (Ccl5)
 
 ```{r DC_Neut_Summary}
 #| echo: false
 
-df_ct30_sample_dc <- get_sample_pcts_bycelltype(df_ct30, 30, celltype='Dendritic.cell', marker='Cxcl13')
-df_ct31_sample_dc <- get_sample_pcts_bycelltype(df_ct31, 31, celltype='Dendritic.cell', marker='Cxcl13')
-df_ct32_sample_dc <- get_sample_pcts_bycelltype(df_ct32, 32, celltype='Dendritic.cell', marker='Cxcl13')
-df_ct34_sample_dc <- get_sample_pcts_bycelltype(df_ct34, 34, celltype='Dendritic.cell', marker='Cxcl13')
-df_ct35_sample_dc <- get_sample_pcts_bycelltype(df_ct35, 35, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct30_sample_dc <- get_sample_pcts_bycelltype(df_30, 30, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct31_sample_dc <- get_sample_pcts_bycelltype(df_31, 31, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct32_sample_dc <- get_sample_pcts_bycelltype(df_32, 32, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct33_sample_dc <- get_sample_pcts_bycelltype(df_33, 33, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct34_sample_dc <- get_sample_pcts_bycelltype(df_34, 34, celltype='Dendritic.cell', marker='Cxcl13')
+df_ct35_sample_dc <- get_sample_pcts_bycelltype(df_35, 35, celltype='Dendritic.cell', marker='Cxcl13')
 
-df_ct30_sample_neut <- get_sample_pcts_bycelltype(df_ct30, 30, celltype='Neutrophil', marker='Ccl5')
-df_ct31_sample_neut <- get_sample_pcts_bycelltype(df_ct31, 31, celltype='Neutrophil', marker='Ccl5')
-df_ct32_sample_neut <- get_sample_pcts_bycelltype(df_ct32, 32, celltype='Neutrophil', marker='Ccl5')
-df_ct34_sample_neut <- get_sample_pcts_bycelltype(df_ct34, 34, celltype='Neutrophil', marker='Ccl5')
-df_ct35_sample_neut <- get_sample_pcts_bycelltype(df_ct35, 35, celltype='Neutrophil', marker='Ccl5')
+df_ct30_sample_neut <- get_sample_pcts_bycelltype(df_30, 30, celltype='Neutrophil', marker='Ccl5')
+df_ct31_sample_neut <- get_sample_pcts_bycelltype(df_31, 31, celltype='Neutrophil', marker='Ccl5')
+df_ct32_sample_neut <- get_sample_pcts_bycelltype(df_32, 32, celltype='Neutrophil', marker='Ccl5')
+df_ct33_sample_neut <- get_sample_pcts_bycelltype(df_33, 33, celltype='Neutrophil', marker='Ccl5')
+df_ct34_sample_neut <- get_sample_pcts_bycelltype(df_34, 34, celltype='Neutrophil', marker='Ccl5')
+df_ct35_sample_neut <- get_sample_pcts_bycelltype(df_35, 35, celltype='Neutrophil', marker='Ccl5')
 
 
 # rbind
-df_dc_by_sample <- rbind(df_ct30_sample_dc, df_ct31_sample_dc, df_ct32_sample_dc, df_ct34_sample_dc, df_ct35_sample_dc)
-df_neut_by_sample <- rbind(df_ct30_sample_neut,df_ct31_sample_neut,df_ct32_sample_neut,df_ct34_sample_neut,df_ct35_sample_neut)
+df_dc_by_sample <- rbind(df_ct30_sample_dc, df_ct31_sample_dc, df_ct32_sample_dc, df_ct33_sample_dc, df_ct34_sample_dc, df_ct35_sample_dc)
+df_neut_by_sample <- rbind(df_ct30_sample_neut,df_ct31_sample_neut,df_ct32_sample_neut,df_ct33_sample_neut, df_ct34_sample_neut,df_ct35_sample_neut)
 
 write.csv(df_dc_by_sample, paste0(results_dir, "/Dendritic_by_sample.csv"))
-write.csv(df_neut_by_sample, paste0(results_dir, "/Neutrophils_by_fov.csv"))
+write.csv(df_neut_by_sample, paste0(results_dir, "/Neutrophils_by_sample.csv"))
+
+```
+
+```{r statsbyfov}
+
+
+# extract fov from cell id
+#df_30$fov <- sapply(df_30$cell, parse_third_token)
+# add cell types 
+#head(df_cell_types)
+#df_ct30 <- merge(df_30, df_cell_types, by="cell")
+
+marker_name <- 'Ccl5'
+marker_names <- c('Chek1', 'Stmn1', 'Pten', 'Ccl5', 'Cxcl13', 'Gzmb', 'Cdkn1a', 'Lmna','Mki67')
+sample_ids <- c(30,31,32,33,34,35)
+#df_ct <- df_ct32
+
+# build df
+
+df_matrices <- rbind(df_30, df_31,df_32, df_33, df_34, df_35)
+result_df <- data.frame()
+
+for (marker_name in marker_names) {
+  #print(marker_name)
+  for (sample_id in sample_ids) {
+    #print(sample_id)
+    df_temp <- get_pct_fov(df_matrices, sample_id, marker_name)
+    result_df <- rbind(result_df, df_temp)
+  }
+}
+    
+print(dim(result_df))
+# df_temp
+# df_temp <- get_pct_fov(df_30, 30, "Chek1")
+
+write.csv(result_df, paste0(results_dir, "/SenescenceGenes_byfov.csv"))
+
+```
+```{r getcounts}
+#| echo: false
+#| warning: false
+
+# Total number of FOVs for each of WT (30, 31, duplicate), Het (32, 33, duplicate), and Hom (34, 35, duplicate). From my counts, 24 WT, 32 het, and 20 FOVs for Hom.
+# Total number of cells for each WT, Het, Hom.
+# Total number of transcripts for each.
+#  
+# The following are optional but would be nice if we have the data:
+# Average single cell size for each. In the Hom images cells look bigger (relevant for senescence), but wonder if Atomix give any size data?
+# Total negative transcripts.
+# Total false codes.
+
+df_meta <- sobj_spleen_split2@meta.data
+dim(df_meta)
+
+counts_matrix <- as.matrix(GetAssayData(sobj_spleen_split2, assay="RNA", layer="counts"))
+dim(counts)
+counts[1:10,1:10]
+
+neg_counts_matrix <- as.matrix(GetAssayData(sobj_spleen_split2, assay="RNA", layer="counts"))
+
+df_counts <- get_counts_byfov(df_meta, counts_matrix, df_rna_lookup, "Endogenous")
+df_sys_counts <- get_counts_byfov(df_meta, counts_matrix, df_rna_lookup, "SystemControl")
+df_neg_counts <- get_counts_byfov(df_meta, counts_matrix, df_rna_lookup, "Negative")
+
+sum(df_counts$num_probes)
+sum(df_sys_counts$num_probes)
+sum(df_neg_counts$num_probes)
+print("Total neg probes", sum(df_neg_counts$num_probes))
+
+write.csv(df_counts, paste0(results_dir, "/CellCounts_byfov.csv"))
+
+
 
 ```
 
 
+
 ```{r countmatrix}
 
-counts <- as.matrix(GetAssayData(sobj, assay="RNA", layer="counts"))
-data <- as.matrix(GetAssayData(sobj, assay="RNA", layer="data"))
+counts <- as.matrix(GetAssayData(sobj_spleen_split2, assay="RNA", layer="counts"))
+data <- as.matrix(GetAssayData(sobj_spleen_split2, assay="RNA", layer="data"))
 write.csv(as.matrix(counts), file = paste0(saved_rds_dir, "/count_matrix.csv"))
-
+write.csv(as.matrix(counts), file = paste0(saved_rds_dir, "/norm_count_matrix.csv"))
 
 ```
 
