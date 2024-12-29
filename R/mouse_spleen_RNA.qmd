@@ -3228,7 +3228,7 @@ DefaultBoundary(sobj_spleen_split2[["fov35"]]) <- "segmentation"
 # fov34
 fov_num <- 254
 
-plot_fov_w_markers <- function(sobj, fov, mols, mol.colors, title) {
+plot_fov_w_markers <- function(sobj, fov_num, mols, mol.colors, title) {
     
   # 
   df_meta <- sobj@meta.data
@@ -3238,9 +3238,9 @@ plot_fov_w_markers <- function(sobj, fov, mols, mol.colors, title) {
   cropped.coords <- Crop(sobj[["Sabaawynewcore091320245"]], 
                          y = c(bbox_mtx[2,1], bbox_mtx[2,2]), x = c(bbox_mtx[1,1], bbox_mtx[1,2]), coords = "plot")
   fov_name <- paste0("fov", fov_num)
-  sobj_spleen_split2[[fov_name]] <- cropped.coords
+  sobj[[fov_name]] <- cropped.coords
   DefaultBoundary(sobj[[fov_name]]) <- "segmentation" 
-  
+  print(mol.colors)
   # Workaround: sobj_spleen_split2 is having issues plotting molecules, "coordinate system" error. 
   # However, sobj_spleen (pre Integration) has cell types loaded. 
   Idents(sobj) <- "CellType_Integrated"
@@ -3248,12 +3248,15 @@ plot_fov_w_markers <- function(sobj, fov, mols, mol.colors, title) {
   p <- ImageDimPlot(sobj, fov=fov_name, axes=TRUE, 
                molecules= mols, 
                mols.cols = mol.colors,
-               mols.size = 0.3,
+               mols.size = 0.5,
                alpha = 1,
                border.size = 0.1,
                coord.fixed=TRUE,
                flip_xy = FALSE, 
                cols=mouseIO_colors) +
+    # something hacky to try to get different plots to be on same scale 
+    scale_x_continuous(limits = c(bbox_mtx["y", "min"], bbox_mtx["y", "max"])) +
+    scale_y_continuous(limits = c(bbox_mtx["x", "min"], bbox_mtx["x", "max"])) +
     ggtitle(title)
   p  
   ggsave(paste0(results_dir, "/SpatialFov_",fov_num,"_", title,".png"), p, dpi=600, height=8)
@@ -3261,10 +3264,33 @@ plot_fov_w_markers <- function(sobj, fov, mols, mol.colors, title) {
   return(p)
 }
 
-p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Cdkn1a","Lmna", "Mki67"), c("blue", "red", "magenta"), "34Hom_Sene")
-p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Cdkn1a"), c("blue"), "34Hom_Cdkn1a")
-p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Lmna"), c("red"), "34Hom_Lmna")
-p <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Mki67"), c("magenta"), "34Hom_Mki67")
+p34a <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Cdkn1a","Lmna", "Mki67"), c("cyan", "red", "magenta"), "34Hom_Sene")
+p34_1 <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Cdkn1a"), c("cyan"), "34Hom_Cdkn1a")
+p34_2 <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Lmna"), c("red"), "34Hom_Lmna")
+p34_3 <- plot_fov_w_markers(sobj_spleen_split2, 258, c("Mki67"), c("magenta"), "34Hom_Mki67")
+
+
+p32a <- plot_fov_w_markers(sobj_spleen_split2, 268, c("Cdkn1a","Lmna", "Mki67"), c("cyan", "red", "magenta"), "32Het_Sene")
+p32_1 <- plot_fov_w_markers(sobj_spleen_split2, 268, c("Cdkn1a"), c("cyan"), "32Het_Cdkn1a")
+p32_2 <- plot_fov_w_markers(sobj_spleen_split2, 268, c("Lmna"), c("red"), "32Het_Lmna")
+p32_3 <- plot_fov_w_markers(sobj_spleen_split2, 268, c("Mki67"), c("magenta"), "32Het_Mki67")
+
+p30a <- plot_fov_w_markers(sobj_spleen_split2, 281, c("Cdkn1a","Lmna", "Mki67"), c("cyan", "red", "magenta"), "30WT_Sene")
+p30_1 <- plot_fov_w_markers(sobj_spleen_split2, 281, c("Cdkn1a"), c("cyan"), "30WT_Cdkn1a")
+p30_2 <- plot_fov_w_markers(sobj_spleen_split2, 281, c("Lmna"), c("red"), "30WT_Lmna")
+p30_3 <- plot_fov_w_markers(sobj_spleen_split2, 281, c("Mki67"), c("magenta"), "30WT_Mki67")
+
+# to keep scaling, patchwork them 
+
+p34a + p32a + p30a
+
+library(patchwork)
+p34a + p32a
+
+ggsave(paste0(results_dir, "/Spatial_3fovs_SenescenceMkrs.png"), (p34a + p32a + p30a), dpi=600, height=6, width=20)
+ggsave(paste0(results_dir, "/Spatial_3fovs_P21_only.png"), (p34_1 + p32_1 + p30_1), dpi=600, height=6, width=20)
+ggsave(paste0(results_dir, "/Spatial_3fovs__Lmna_only.png"), (p34_2 + p32_2 + p30_2), dpi=600, height=6, width=20)
+ggsave(paste0(results_dir, "/Spatial_3fovs_Mki67_only.png"), (p34_3 + p32_3 + p30_3), dpi=600, height=6, width=20)
 
 
 ```

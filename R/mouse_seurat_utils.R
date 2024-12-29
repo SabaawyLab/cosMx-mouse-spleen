@@ -148,17 +148,6 @@ load_meta_load_missed <- function(sobj, metadata_file) {
   #df_obj6_meta <- read.csv(paste0(lung6.data.dir, "/Lung6_metadata_file.csv"))
   df_obj_meta <- read.csv(metadata_file)
   
-  # workaround to fix inverted centroids, flips CenterY_global_px
-  #df_obj_meta <- flip_centroids(df_obj_meta)
-  
-  # shorten unweildy column names
-  string_to_replace <- "fef9b11c.70b7.4905.b96d.0b80c5560fb7"
-  replacement_string <- "fef"
-  names(df_obj_meta) <- gsub(string_to_replace, replacement_string, names(df_obj_meta))
-  string_to_replace <- "61b859e8.677d.4cad.9cf5.44e03fe9960e"
-  replacement_string <- "61b"
-  names(df_obj_meta) <- gsub(string_to_replace, replacement_string, names(df_obj_meta))
-  
   df_obj_meta$cell_num = df_obj_meta$cell_ID # save integer version of cell_ID
   #df_obj_meta$key = paste0("c_", slide_num, "_",df_obj_meta$fov, "_", df_obj_meta$cell_ID)
   df_obj_meta$key = paste0( df_obj_meta$cell_ID, "_", df_obj_meta$fov)
@@ -168,12 +157,12 @@ load_meta_load_missed <- function(sobj, metadata_file) {
   print("Number of cells in Seurat object before adding metadata")
   print(nrow(sobj@meta.data))
   # AddMetaData needs the same records in the same order
-  print("Do the number of rows in the metadata file match the sobj?")
+  #print("Do the number of rows in the metadata file match the sobj?")
   print(nrow(df_obj_meta) == nrow(sobj@meta.data)) # FALSE
   lost_on_load <- setdiff(rownames(df_obj_meta), rownames(sobj@meta.data)) # about 100, ok, lets drop these 
   length(lost_on_load)
   if(length(lost_on_load) > 0){
-    print ("These are the rows that are in the metadata file but not the Seurat obj, we will drop them from the metadata file.")
+    print ("These are the rows that are in the metadata file but not the Seurat obj, we will drop them from the metadata file before load.")
     print(head(lost_on_load))
   }
   print("expect 0 cell differences")
@@ -225,7 +214,7 @@ do_rownames_match <- function(sobj, df) {
       print("The keys are in the same order")
       return (TRUE)
     } else {
-      print("The keys match but are not in the same order")
+      print("The keys match, but reorder.")
       return (FALSE)
     }
   }
@@ -1506,6 +1495,17 @@ get_bbox_of_fov <- function(df_meta, Run_Tissue, fov_num) {
   return(bounding_box)
 }
 
+pixels_to_microns <- function(min_px, max_px) {
+  # length in microns
+  # an fov is 510 microns^2 and ___ pixels^2.
+  factor = 4225 / 510  # px in fov x axis / microns  
+  dist_microns = abs(max_px - min_px) / factor
+  return (dist_microns)
+}
+
+
+
+
 #' Given a Seurat object, return the counts matrix as a dataframe by cell
 #'
 #' @param sobj Seurat object 
@@ -1544,21 +1544,23 @@ get_sample_pcts <- function(df_counts_mtx, sample_id) {
   return(df_pct_sample)
 }
 
-# Summarize the counts matrix by sample. Hardcoded colnames, sorry. A bit fragile.
+# Summarize the counts matrix by sample. Hardcoded colnames, sorry.
 get_sample_pcts_bycelltype <- function(df_ct, sample_id, celltype, marker_name) {
   
   df_pct_sample <- df_ct %>%
-    dplyr::select(c('Sample.ID.x', marker, 'CellType_sup.x')) %>%
+    dplyr::select(c('Sample.ID', marker_name, 'CellType_Integrated')) %>%
     dplyr::mutate(marker = df_ct[[marker_name]]) %>% 
-    dplyr::filter(Sample.ID.x == sample_id & CellType_sup.x == celltype) %>%
-    summarize(count = n(), # number of cells
-              marker_count = sum(marker_name > 0),
+    dplyr::filter(Sample.ID == sample_id & CellType_Integrated == celltype) %>%
+    summarize(cell_count = n(), # number of cells
+              pos_for_marker_count = count(marker > 0),
+              num_probes = sum(marker),
               .groups = "drop") %>%
-    dplyr::filter(count > 0)  %>%
+    #dplyr::filter(count > 0)  %>%
     mutate(sample=sample_id,
                        marker = marker_name,
                        cell_type = cell_type,
-                       pct_cells_ = (marker_count / sum(count)) * 100) %>%
+                       #num_cells_pos = marker_count,
+                       pct_cells_pos = (pos_for_marker_count / cell_count) * 100) %>%
     dplyr::relocate(sample) # move sample first
   
   return(df_pct_sample)
@@ -1568,21 +1570,51 @@ get_sample_pcts_bycelltype <- function(df_ct, sample_id, celltype, marker_name) 
 get_pct_fov_celltype <- function(df_ct, sample_id, cell_type, marker_name){
   
   df_pct_fov_celltype <- df_ct %>%
-    dplyr::select(c('fov', marker, 'CellType_sup.x', 'Sample.ID.x')) %>%
+    dplyr::select(c('fov', marker_name, 'CellType_Integrated', 'Sample.ID')) %>%
     dplyr::mutate(marker = df_ct[[marker_name]]) %>% 
-    dplyr::filter(Sample.ID.x == sample_id & CellType_sup.x == cell_type) %>%
+    dplyr::filter(Sample.ID == sample_id & CellType_Integrated == cell_type) %>%
     group_by(fov) %>%
-    summarize(count = n(), # number of cells
-              marker_count = sum(marker > 0),
+    summarize(cell_count = n(), # number of cells
+              pos_for_marker_count = count(marker > 0),
+              num_probes = sum(marker),
               .groups = "drop") %>%
-    dplyr::filter(count > 0)  %>%
+    #dplyr::filter(count > 0)  %>%
     mutate(sample=sample_id,
            marker = marker_name,
            cell_type = cell_type,
-           pct_cells_ = (marker_count / sum(count)) * 100) %>%
+           pct_cells_pos = (pos_for_marker_count / cell_count) * 100) %>%
     dplyr::relocate(sample) 
   
   return(df_pct_fov_celltype)
+}
+
+
+# Get Percentage of cells for each fov that are positive, independent of celltype
+get_pct_fov <- function(df_ct, sample_id, marker_name){
+  
+  df_pct_fov <- df_ct %>%
+    dplyr::select(c('fov', marker_name, 'CellType_Integrated', 'Sample.ID')) %>%
+    dplyr::mutate(marker = df_ct[[marker_name]]) %>% 
+    dplyr::filter(Sample.ID == sample_id) %>%
+    group_by(fov) %>%
+    summarize(cell_count = n(), # number of cells
+              pos_for_marker_count = count(marker > 0),
+              num_probes = sum(marker),
+              .groups = "drop") %>%
+    #dplyr::filter(count > 0)  %>%
+    mutate(sample=sample_id,
+           marker = marker_name,
+           pct_cells_pos = (pos_for_marker_count / cell_count) * 100) %>%
+    dplyr::relocate(sample) 
+  
+  return(df_pct_fov)
+}
+
+
+parse_third_token <- function(string) {
+  # Split the string by underscores and extract the third token
+  tokens <- strsplit(string, "_")[[1]]
+  return(tokens[3])
 }
 
 # Summarize the counts matrix by fov
@@ -1590,7 +1622,7 @@ get_fov_pcts <- function(df_counts_mtx, sample_id) {
   df_counts_mtx$fov <- sapply(df_counts_mtx$cell, parse_third_token)
   df_pct_fov <- df_counts_mtx %>%
     dplyr::select(c('fov','Cdkn1a','Mki67','Lmna')) %>%
-    dplyr::filter(Sample.ID == sample_id) %>%
+    dplyr::filter(df_counts_mtx$Sample.ID == sample_id) %>%
     group_by(fov) %>%
     summarize(count = n(), # number of cells
               Cdkn1a_count = sum(Cdkn1a > 0),
@@ -1669,3 +1701,68 @@ my_dot_plot <- function (sobj, cluster_col='seurat_clusters', title='', results_
   ggsave(paste0(results_dir, "",sanitize_name(title),"_DotPlot.png"), p, width = 12)
   return(p)
 }
+
+# Get Percentage of cells for each fov that are positive, independent of celltype
+get_counts_byfov <- function(df, count_matrix, df_rna_lookup, codeclass){
+  
+  # Calculate the total counts per cell (column sums)
+  filtered_display_names <- df_rna_lookup$DisplayName[df_rna_lookup$CodeClass == codeclass]
+  print(paste("number of genes to include:",length(filtered_display_names)))
+        
+  filtered_counts_matrix <- counts_matrix[rownames(counts_matrix) %in% filtered_display_names, ]
+  dim(filtered_counts_matrix)  
+  
+  total_counts <- colSums(filtered_counts_matrix)
+  
+  # Convert to a dataframe
+  total_counts_df <- data.frame(
+    cell_id = names(total_counts),
+    num_probes = total_counts
+  )
+  # Set the rownames to the cell IDs
+  rownames(total_counts_df) <- total_counts_df$cell_id
+  
+  # merge with df
+  df2 <- merge(df, total_counts_df, by='cell_id')
+  
+  df_counts <- df2 %>%
+    dplyr::select(c('Sample.ID', 'fov', 'num_probes')) %>%
+    group_by(fov, Sample.ID) %>%
+    summarize(cell_count = n(), # number of cells
+              num_probes = sum(num_probes)) # %>%
+              #.groups = "drop" 
+   # dplyr::relocate(sample) 
+  
+  return(df_counts)
+}
+
+# Get status such as Area by Genotype
+get_stats_by_genotype <- function(df, group.by='Genotype'){
+  
+  df_stats <- df %>%
+    dplyr::select(c('Genotype', 'Area' )) %>%
+    group_by(Genotype) %>%
+    summarize(cell_count = n(), # number of cells
+             median_area = median(Area),
+              mean_area = mean(Area) )
+  #.groups = "drop" 
+  # dplyr::relocate(sample) 
+  
+  return(as.data.frame(df_stats))
+}
+
+# Get status such as Area by Genotype
+get_stats_by_genotype <- function(df, group.by='Genotype'){
+  
+  df_stats <- df %>%
+    dplyr::select(c('Genotype', 'Area' )) %>%
+    group_by(Genotype) %>%
+    summarize(cell_count = n(), # number of cells
+              median_area = median(Area),
+              mean_area = mean(Area) )
+  #.groups = "drop" 
+  # dplyr::relocate(sample) 
+  
+  return(as.data.frame(df_stats))
+}
+
