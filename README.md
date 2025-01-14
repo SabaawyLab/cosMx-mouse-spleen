@@ -8,22 +8,24 @@ Purpose of script: load the Seurat data object produced by the AtoMx pipeline,
 generate plots, evaluate rna quality controls. summarize and display what has 
 already been done in AtoMx 1
 
-1. Seurat LoadNanostring() method to load Seurat from flatfiles 
-
-2\. Load Sample metadata per cell:
-
-2a. Subtract negative control probes
-2b. Apply Quality Control filters. 
-2c. Normalization method: Seurat LogNormalize
-2d. FOV and Sample.ID metadata assignments. 
-2e. Subset to slide labelled "Sabaawy new core 09/13/2024 5" and only spleen samples
+1. Seurat LoadNanostring() method to load Seurat from flatfiles  
+2. Load Sample metadata per cell:   s
+  a. Subtract negative control probes  
+  b. Apply Quality Control filters.   
+  c. Normalization method: Seurat LogNormalize  
+  d. FOV and Sample.ID metadata assignments.   
+  e. Subset to slide labelled "Sabaawy new core 09/13/2024 5" and only spleen samples  
 
 3. Optimize PCA, Umap, assess clusters
 4. Data Exploratory Analysis, FeaturePlots 
-5. Integration, since Homozygous samples 
-6. Apply Cell Typing to the Seurat object with clustering and manual annotation
+5. Export DEGs between conditions, obtained with FindMarkers
+6. Integration, since Homozygous samples 
+7. Apply Cell Typing to the Seurat object with clustering and manual annotation
 with use of FindMarkers and DotPlot
 
-7. plots and visualizations, zoomed in to representative regions
-8. Export various metrics, e.g. percent of cells positive by marker
+8. plots and visualizations, zoomed in to representative regions
+9. Export various metrics, e.g. percent of cells positive by marker
+
+
+The terms of the Apache license for open source applies to this repo.  
 

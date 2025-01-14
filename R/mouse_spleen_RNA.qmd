@@ -103,21 +103,13 @@ Setup paths
 
 #root_dir <- '/Volumes/T9/PSR-GEN-057' # Experiment specific folder structure
 root_dir <- '/Volumes/T9/Mouse_Spleen_Experiment/Sabaawy_MuTMA_RNA_07_10_2024_21_25_12_667'
-#root_ref_dir <- '/Volumes/T9' # reference dir for files not specific to this Experiment. 
 exp_name <- 'Sabaawy_MuTMA_RNA_07_10_2024_21_25_12_667'
 slide_names <- c( 'Sabaawynewcore091320246', 'Sabaawynewcore091320245')
-# The cell ids in these are labeled c_1, c_2, c_3, c_4 respectively in the seurat object and metadata files.
 slide_names
 slide_name <- 'Sabaawynewcore091320245' # select one to work with (can be arbitrary)
 # run_names is not needed but could be used to navigate the directory structure
 run_names <- c('20240920_233038_S2','20240920_233038_S1')
 run_name <- '20240920_233038_S1' # matches slide_name
-
-# Caution: There is a cell naming convention in the flatfile vs the exported Seurat Object that differ. 
-# After seurat::LoadNanostring(), we will rename the keys to match the Seurat object, like c_<slide_num>_<fov>_<cell_num> e.g. c_1_1_300
-# cell_label_names is not explicitly needed, but merge will prepend these to the rownames if uniqueness is needed. 
-# Our use of rename_keys makes the use of these cell_label_names unnecessary on merge.
-# cell_label_names <- c('c_1', 'c_2', 'c_3', 'c_4')
 
 results_dir <- paste0(root_dir, "/spleen_results")
 saved_rds_dir <- paste0(root_dir, "/saved_objs")
@@ -144,12 +136,8 @@ df_special_genes <- read.csv(paste0(markers_dir, '/GenesOfInterest_RNA.csv'), he
 colnames(df_special_genes) <- c('Display_Name', 'OfInterest_Reason', "Notes", "GroupAs", "Highlight")
 head(df_special_genes)
 
-#genes_special <- list(df_special_genes$Display_Name[1:47]) # 
-
-
 # left outer join with df_gene_data by RNA1K to gene 
 df_gene_data2 <- left_join(df_gene_data, df_special_genes, by ='Display_Name')
-#df_gene_data2$OfInterest_Reason[is.na(df_gene_data2$OfInterest_Reason)] <- " "
 head(df_gene_data2)
 nrow(df_gene_data2)
 df_gene_data <- df_gene_data2
@@ -161,19 +149,10 @@ Special Genes are ones we are specifically interested in for a reason, or perhap
 
 ```{r specialgenes}
 #| echo: false
-# colnames(df_special_genes) <- c('Display_Name', 'OfInterest_Reason', "Notes", "GroupAs", "Highlight")
-# df_special_genes <- df_special_genes %>% dplyr::select(Display_Name, OfInterest_Reason, Notes, GroupAs, Highlight)
-# head(df_special_genes)
 
 genes_special <- df_special_genes$Display_Name
 genes_special
 
-# genes_highlight <- df_special_genes %>%
-#   filter(Highlight == "x") %>%
-#   pull(Display_Name)
-# 
-# genes_highlight
-# breakdown
 genes_senescence <- df_special_genes %>%
   filter(OfInterest_Reason %in% c("Senescence")) %>%
   pull(Display_Name)
@@ -236,7 +215,6 @@ names(celltype_colors) <- c("B.cell", "Dendritic.cell", "Endothelial",
                             "Monocyte", "Neutrophil", "NK.cell", "Plasma",
                             "Plasmablast", "T.cell.CD4", "T.cell.CD8",
                             "T.cell.Reg", "Plasmacytoid", "unknown", 
-                            
                             "a","b","c","d", "e")
 
 # change to my labels 
