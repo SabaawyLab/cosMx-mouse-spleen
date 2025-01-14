@@ -4,10 +4,26 @@
 
 Best code is the Quarto file, mouse_spleen_RNA.qmd which includes mouse_seurat_utils.R for helper functions. 
 
-What this Quarto file does:
-1. read in mouse spleen flatfiles exported from AtoMx.
-2. read in custom csv files with fov and sample metadata for mice. 
-3. read in BioMarker of interest csv and Panel gene list
-4. Integrationn to handle sample differences
-5. standard Seurat steps
-6. Cell Typing by clustering, and also InSituType (not used)
+Purpose of script: load the Seurat data object produced by the AtoMx pipeline, 
+generate plots, evaluate rna quality controls. summarize and display what has 
+already been done in AtoMx 1
+
+1. Seurat LoadNanostring() method to load Seurat from flatfiles 
+
+2\. Load Sample metadata per cell:
+
+2a. Subtract negative control probes
+2b. Apply Quality Control filters. 
+2c. Normalization method: Seurat LogNormalize
+2d. FOV and Sample.ID metadata assignments. 
+2e. Subset to slide labelled "Sabaawy new core 09/13/2024 5" and only spleen samples
+
+3. Optimize PCA, Umap, assess clusters
+4. Data Exploratory Analysis, FeaturePlots 
+5. Integration, since Homozygous samples 
+6. Apply Cell Typing to the Seurat object with clustering and manual annotation
+with use of FindMarkers and DotPlot
+
+7. plots and visualizations, zoomed in to representative regions
+8. Export various metrics, e.g. percent of cells positive by marker
+
